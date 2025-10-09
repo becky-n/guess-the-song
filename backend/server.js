@@ -7,7 +7,6 @@ import dotenv from "dotenv";
 import trackRoutes from "./routes/trackRoutes.js";
 import { createServer } from "http";
 import { Server } from "socket.io"; 
-import kpopRoutes from "./routes/kpopRoutes.js";
 import { console } from "inspector";
 
 dotenv.config();

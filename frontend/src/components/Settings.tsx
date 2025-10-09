@@ -10,8 +10,6 @@ import TimerIcon from "../assets/setting-icons/Timer.png";
 const GENRES = ["kpop", "pop", "hiphop", "edm"] as const;
 export type Genre = (typeof GENRES)[number];
 
-export interface GameSettings {
-  players: string;
   
 // Player count mapping object
 export const PlayerCount = {
@@ -73,38 +71,11 @@ interface SettingsProps {
 
 // Dropdown options for each setting
 const options = {
-  players: [
-    "Single Player",
-    "2 Players",
-    "3 Players",
-    "4 Players",
-    "5 Players",
-    "6 Players",
-    "7 Players",
-    "8 Players",
-  ] as const,
-  gameMode: ["Single Song", "Mixed Songs"] as const,
-  rounds: ["5 Rounds", "10 Rounds", "15 Rounds", "20 Rounds"] as const,
-  guessTime: ["10 sec", "15 sec", "20 sec", "30 sec"] as const,
-  genre: GENRES,
-} as const;
-
-type SettingKey = keyof typeof options;
-
-// Icon & Label mapping for each setting
-const icons: Record<
-  Exclude<SettingKey, never>,
-  { src: string; label: string }
-> = {
-  players: { src: PlayersIcon, label: "PLAYERS" },
-  gameMode: { src: ModeIcon, label: "GAME MODE" },
-  rounds: { src: RoundIcon, label: "ROUNDS" },
-  guessTime: { src: TimerIcon, label: "GUESS TIME" },
-  genre: { src: ModeIcon, label: "GENRE" },
   amountOfPlayers: ['Single Player', '2 Players', '3 Players', '4 Players', '5 Players', '6 Players', '7 Players', '8 Players'],
   gameMode: ['Single Song', 'Mixed Songs'],
   rounds: ['5 Rounds', '10 Rounds', '15 Rounds', '20 Rounds'],
   guessTime: ['10 sec', '15 sec', '20 sec', '30 sec'],
+  genre: GENRES,
 };
 
 // Icon & Label mapping for each setting
@@ -113,6 +84,7 @@ const icons = {
   gameMode: { src: ModeIcon, label: 'GAME MODE' },
   rounds: { src: RoundIcon, label: 'ROUNDS' },
   guessTime: { src: TimerIcon, label: 'GUESS TIME' },
+  genre: { src: ModeIcon, label: "GENRE" },
 };
 
 const Settings: React.FC<SettingsProps> = ({ settings, setSettings }) => {

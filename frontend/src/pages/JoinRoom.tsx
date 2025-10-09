@@ -60,7 +60,7 @@ const JoinRoom: React.FC<GuessifyProps> = () => {
   };
 
   useEffect(() => {
-    songService.fetchRandomKpop().then((songs) => {
+    songService.fetchRandom().then((songs) => {
     console.log("Fetched songs", songs);
     });
   }, []);
