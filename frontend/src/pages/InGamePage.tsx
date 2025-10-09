@@ -10,6 +10,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { songService } from "../services/songServices";
 import type { Song } from "../types/song";
 
+type Genre = "kpop" | "pop" | "hiphop" | "edm";
+
 interface GuessifyProps {}
 
 const InGamePage: React.FC<GuessifyProps> = () => {
@@ -22,7 +24,9 @@ const InGamePage: React.FC<GuessifyProps> = () => {
     rounds?: string;
     guessTime?: string;
     gameMode?: string;
+    genre?: Genre;
   };
+
 
   // --- Player State ---
   // Single player data (added correctAnswers and previousPoints)
@@ -63,6 +67,12 @@ const InGamePage: React.FC<GuessifyProps> = () => {
   const isRoundStarting = useRef(false);
 
   /* ----------------- HELPER FUNCTIONS ----------------- */
+
+  const genre = (location.state?.genre ?? "kpop") as "kpop"|"pop"|"hiphop"|"edm";
+
+  useEffect(() => {
+    songService.fetchRandom(genre, 50).catch(console.error);
+  }, [genre]);
 
   // Get a random set of songs for multiple choice rounds
   const getRandomSongs = (num: number): Song[] => {

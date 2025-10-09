@@ -15,7 +15,7 @@ const JoinRoom: React.FC<GuessifyProps> = () => {
 
   const handleCreateRoom = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    songService.fetchRandomKpop().then((songs) => {
+    songService.fetchRandom().then((songs) => {
       console.log("Fetched songs", songs);
     });
 
