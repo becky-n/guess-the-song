@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 // K-Pop endpoints
-app.use("/api/kpop", kpopRoutes);
+app.use("/api/tracks", kpopRoutes);
 
 // tiny error handler
 app.use((err, _req, res, _next) => {
@@ -23,7 +23,7 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: msg });
 });
 
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 3001;
 app.listen(port, () =>
   console.log(`Server running at http://localhost:${port}`)
 );
