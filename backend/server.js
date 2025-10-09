@@ -4,7 +4,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import kpopRoutes from "./routes/kpopRoutes.js";
+import trackRoutes from "./routes/trackRoutes.js";
 
 dotenv.config();
 
@@ -12,8 +12,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.disable("x-powered-by");
+
 // K-Pop endpoints
-app.use("/api/tracks", kpopRoutes);
+app.use("/api/tracks", trackRoutes);
 
 // tiny error handler
 app.use((err, _req, res, _next) => {
