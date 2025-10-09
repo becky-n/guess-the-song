@@ -3,6 +3,9 @@ import "../css/SettingsPage.css";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useState } from "react";
 
+const GENRES = ["kpop", "pop", "hiphop", "edm"] as const;
+type Genre = typeof GENRES[number];
+
 const SettingsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -17,6 +20,7 @@ const SettingsPage = () => {
     gameMode: "Single Song",
     rounds: "10 Rounds",
     guessTime: "15 sec",
+    genre: "kpop" as Genre, 
   });
 
   // Navigate back to lobby
@@ -28,7 +32,6 @@ const SettingsPage = () => {
   const handleGameCodeClick = () => {
   };
 
-  // Create room and move to game page, passing player info and settings
   const handleCreateRoom = () => {
     navigate("/game", { state: { ...settings, playerName } });
   };
@@ -60,7 +63,7 @@ const SettingsPage = () => {
         <Settings settings={settings} setSettings={setSettings} />
 
         {/* Button to confirm settings and start game */}
-        <div className="create-room-section">
+              <div className="create-room-section">
           <button className="create-room-button" onClick={handleCreateRoom}>
             Create Room
           </button>
