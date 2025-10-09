@@ -41,15 +41,21 @@ const renderRank = (index: number): JSX.Element => {
 const Scoreboard: React.FC<ScoreboardProps> = ({ players = [] }) => {
   return (
     <div className="scoreboard">
-      {players.map((player, index) => (
-        <div className="scoreboard-player" key={player.name}>
-          <div className="player-rank">{renderRank(index)}</div>
-          <div className="player-info">
-            <span className="player-name">{player.name}</span>
-            <span className="player-points">{player.points} points</span>
-          </div>
+      {players.length === 0 ? (
+        <div className="scoreboard-empty">
+          <span>Waiting for players...</span>
         </div>
-      ))}
+      ) : (
+        players.map((player, index) => (
+          <div className="scoreboard-player" key={player.name}>
+            <div className="player-rank">{renderRank(index)}</div>
+            <div className="player-info">
+              <span className="player-name">{player.name}</span>
+              <span className="player-points">{player.points} points</span>
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 };

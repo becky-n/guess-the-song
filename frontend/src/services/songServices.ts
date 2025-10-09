@@ -1,7 +1,12 @@
 import { type Song } from "../types/song";
 import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
+
+if (!API_BASE) {
+  throw new Error("VITE_API_BASE_URL is not defined");
+}
+console.log("Using API base URL:", API_BASE);
 
 export type Genre = "kpop" | "pop" | "hiphop" | "edm"; 
 type SongDTO = {
@@ -57,11 +62,13 @@ export default class SongService {
 
   // --- Single-song controls ---
   playSong(index: number = this.currentIndex) {
+
     if (!this.cachedSongs.length) return;
     this.stopSong();
 
     this.currentIndex = index;
     const song = this.cachedSongs[this.currentIndex];
+
     if (!song.previewUrl) return;
 
     this.currentAudio = new Audio(song.previewUrl);

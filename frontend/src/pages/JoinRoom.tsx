@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import "../css/JoinRoom.css";
 import { songService } from "../services/songServices";
-
 import { useNavigate, useLocation } from "react-router-dom";
+import { isValidRoomCode } from "../utils/roomCode.tsx";
+
 
 interface GuessifyProps {}
 
@@ -12,7 +13,7 @@ const JoinRoom: React.FC<GuessifyProps> = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const playerName = location.state?.playerName; // get name from EnterName
-
+  
   const handleCreateRoom = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     songService.fetchRandom().then((songs) => {
@@ -23,20 +24,46 @@ const JoinRoom: React.FC<GuessifyProps> = () => {
     navigate("/create_room", { state: { playerName } });
   };
 
-  /* Commented out handleJoinRoom as it is only required for A2
-  const handleJoinRoom = () => {
-    // If you also want JOIN button to go somewhere and preserve the name
-    navigate("/create_room", { state: { playerName } });
-  };
-  */
+  const handleJoinRoom = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    // console.log("JOIN button clicked!", { code, playerName, codeLength: code.length });
+    if (!code.trim()) {
+          alert("Please enter a room code!");
+          return;
+        }
+    
+    if (!playerName) {
+      alert("Please enter your name first!");
+      return;
+    }
 
-  const handleBackClick = (): void => {
-    navigate("/");
+    if (!isValidRoomCode(code)) {
+      alert("Invalid room code format! Code should be 6 characters (letters and numbers).");
+      return;
+    }
+    // Navigate to waiting room first, then host will start the game
+    navigate(`/waiting/${code}`, { 
+      state: { 
+        playerName,
+        isHost: false
+      } 
+    });
   };
+
+  const handleBackClick = (): void => { 
+    navigate("/"); 
+  }; 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    setCode(e.target.value.toUpperCase());
+    const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    setCode(value);
   };
+
+  useEffect(() => {
+    songService.fetchRandomKpop().then((songs) => {
+    console.log("Fetched songs", songs);
+    });
+  }, []);
 
   return (
     <div className="guessify-container">
@@ -60,9 +87,11 @@ const JoinRoom: React.FC<GuessifyProps> = () => {
             className="guessify-input"
             maxLength={8}
           />
-          <button className="guessify-join-button">
+          <button className="guessify-join-button"             
+          onClick={handleJoinRoom}
+          disabled={!code.trim()}
+          >
             JOIN
-            {/* Note: handleJoinRoom is currently disabled */}
           </button>
         </div>
 

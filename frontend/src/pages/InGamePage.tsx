@@ -6,49 +6,56 @@ import MultipleChoice from "../components/MultipleChoice";
 import SingleChoice from "../components/SingleChoice";
 import AudioControls from "../components/AudioControls";
 import RoundScoreDisplay from "../components/RoundScoreDisplay";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { songService } from "../services/songServices";
 import type { Song } from "../types/song";
+import {socket} from '../socket';
+
+//interface GuessifyProps {}
+interface Player {
+  name: string;
+  points: number;
+  previousPoints: number;
+  correctAnswers: number;
+}
+
+const getTimeAsNumber = (timeStr: string): number => {
+  return parseInt(timeStr.replace(' sec', ''));
+};
 
 type Genre = "kpop" | "pop" | "hiphop" | "edm";
 
 interface GuessifyProps {}
 
-const InGamePage: React.FC<GuessifyProps> = () => {
+const InGamePage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { code } = useParams(); // room code from URL
 
   // --- Extract settings safely ---
-  const state = location.state as {
-    playerName?: string;
-    rounds?: string;
-    guessTime?: string;
-    gameMode?: string;
-    genre?: Genre;
-  };
+  const state = location.state 
+  const { playerName, isHost, rounds: totalRounds, guessTime: roundTime, gameMode, genre: Genre} = state;
 
 
   // --- Player State ---
-  // Single player data (added correctAnswers and previousPoints)
-  const [player, setPlayer] = useState({
-    name: state?.playerName || "You",
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [player, setPlayer] = useState<Player>({
+    name: playerName,
     points: 0,
-    previousPoints: 0, // Track previous score for score change display
-    correctAnswers: 0, // Track correct answers
+    previousPoints: 0,
+    correctAnswers: 0,
   });
 
-
   // --- Game Settings ---
-  const totalRounds = parseInt(state?.rounds || "10");
-  const roundTime = parseInt(state?.guessTime || "30");
-  const isSingleSong = state?.gameMode === "Single Song";
+  const isSingleSong = gameMode === "Single Song";
 
   // --- Round State ---
   const [currentRound, setCurrentRound] = useState(1);
-  const [timeLeft, setTimeLeft] = useState(roundTime);
-  const [isRoundActive, setIsRoundActive] = useState(true);
+  const [timeLeft, setTimeLeft] = useState(getTimeAsNumber(roundTime));
+  const [roundStartTime, setRoundStartTime] = useState<number | null>(null);
+  const [isRoundActive, setIsRoundActive] = useState(false);
   const [isIntermission, setIsIntermission] = useState(false);
-  const [inviteCode] = useState("ABC123");
+  const [inviteCode] = useState(code || "INVALID");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
   // --- Single Song Mode ---
@@ -63,8 +70,87 @@ const InGamePage: React.FC<GuessifyProps> = () => {
   const [isTimeUp, setIsTimeUp] = useState(false);
 
   // --- Round Control Helpers ---
-  const [roundStartTime, setRoundStartTime] = useState<number>(0);
   const isRoundStarting = useRef(false);
+  //const roundTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* ----------------- SOCKET CONNECTION ----------------- */
+  useEffect(() => {
+
+    socket.emit("get-room-players-scores", code );
+
+    // Listen for players joined the room
+    socket.on("room-players-scores", ( playerScores ) => {
+      setPlayers(playerScores);
+    });
+
+    // Host starts round → everyone gets the same song
+    socket.on("round-start", ({ song, choices, answer, startTime }) => {
+      setCurrentSong(song);
+      setOptions(choices);
+      setCorrectAnswer(answer);
+      const roundStart = startTime || Date.now();
+      setRoundStartTime(roundStart);
+      setIsRoundActive(true);
+      setTimeLeft(getTimeAsNumber(roundTime));
+    });
+
+    // Score update - this will override the initial scores when available
+    socket.on("score-update", (updatedPlayers: Player[]) => {
+  
+      // Only update if we have valid data
+      if (updatedPlayers && Array.isArray(updatedPlayers) && updatedPlayers.length > 0) {
+        // Sort players by points (highest first)
+        const sortedPlayers = [...updatedPlayers].sort((a, b) => b.points - a.points);
+        setPlayers(sortedPlayers);
+        
+        // Update current player state from the players list
+        const currentPlayer = updatedPlayers.find(p => p.name === playerName);
+        if (currentPlayer) {
+          setPlayer(currentPlayer);
+        }
+      } else {
+        console.log("⚠️ WARNING: Received invalid score update data, keeping current players");
+      }
+    });
+
+    // Host continues to next round - all players advance
+  socket.on("continue-to-next-round", ({ nextRound }) => {
+    console.log(`Host advanced all players to round ${nextRound}`);
+    setCurrentRound(nextRound);
+    setTimeLeft(getTimeAsNumber(roundTime));
+    setIsRoundActive(true);
+    setIsIntermission(false);
+    setSelectedIndex(null);
+    setHasGuessedCorrectly(false);
+    setHasSelectedCorrectly(false);
+    setShowCorrectAnswer(false);
+    setIsTimeUp(false);
+  });
+
+  // Host ends game - all players navigate to end game page
+  socket.on("navigate-to-end-game", () => {
+    console.log("Host ended the game, navigating all players to end game page");
+    navigate("/end_game", {
+      state: { code }
+    });
+  });
+
+    return () => {
+      socket.off("room-players-scores");
+      socket.off("round-start");
+      socket.off("score-update");
+      socket.off("continue-to-next-round");
+      socket.off("navigate-to-end-game");
+    };
+  }, [code, playerName, navigate, roundTime]);
+
+ /* ----------------- ROUND LOGIC ----------------- */
+  useEffect(() => {
+    if (timeLeft === 0) {
+      setIsRoundActive(false);
+      socket?.emit("round-end", { code });
+    }
+  }, [isRoundActive, timeLeft, socket, code]);
 
   /* ----------------- HELPER FUNCTIONS ----------------- */
 
@@ -105,23 +191,55 @@ const InGamePage: React.FC<GuessifyProps> = () => {
 
     return opts.sort(() => 0.5 - Math.random());
   };
+  
 
-  // Calculate points based on remaining time (min 100, max 1000)
-  const calculatePoints = (timeRemaining: number): number => {
+  // Calculate points based on how quickly the answer was given (min 100, max 1000)
+  const calculatePoints = (): number => {
+    if (!roundStartTime) return 500; // fallback if no start time
+    const roundTimeAsNumber = getTimeAsNumber(roundTime);
+    
     const maxPoints = 1000;
     const minPoints = 100;
-    const timeRatio = timeRemaining / roundTime;
+    const elapsedTime = (Date.now() - roundStartTime) / 1000; // seconds
+    const timeRatio = Math.max(0, (roundTimeAsNumber - elapsedTime) / roundTimeAsNumber);
     const points = Math.floor(minPoints + (maxPoints - minPoints) * timeRatio);
     return Math.max(points, minPoints);
   };
 
   // Add points and optionally increment correctAnswers
   const addPointsToPlayer = (points: number, correct: boolean = false) => {
+    // Calculate new totals
+    const newPoints = player.points + points;
+    const newCorrectAnswers = correct ? player.correctAnswers + 1 : player.correctAnswers;
+
+    // Update the current player's state
     setPlayer(prev => ({
       ...prev,
-      points: prev.points + points,
-      correctAnswers: correct ? prev.correctAnswers + 1 : prev.correctAnswers,
+      points: newPoints,
+      correctAnswers: newCorrectAnswers,
     }));
+
+    // Update the players list
+    setPlayers(prev => prev.map(p => 
+      p.name === playerName 
+        ? {
+            ...p,
+            points: newPoints,
+            correctAnswers: newCorrectAnswers,
+          }
+        : p
+    ));
+
+    // Emit score update to server with total points
+    if (socket) {
+      const scoreData = {
+        code,
+        playerName,
+        points: newPoints,
+        correctAnswers: newCorrectAnswers
+      };
+      socket.emit("update-score", scoreData);
+    }
   };
 
   /* ----------------- HANDLERS ----------------- */
@@ -134,7 +252,7 @@ const InGamePage: React.FC<GuessifyProps> = () => {
     const chosen = options[index];
 
     if (chosen === correctAnswer) {
-      const points = calculatePoints(timeLeft);
+      const points = calculatePoints();
       addPointsToPlayer(points, true); // Correct answer count
       setHasSelectedCorrectly(true);
       setShowCorrectAnswer(true);
@@ -156,7 +274,7 @@ const InGamePage: React.FC<GuessifyProps> = () => {
   // Handle correct guess in single song mode
   const handleCorrectGuess = () => {
     if (!hasGuessedCorrectly) {
-      const points = calculatePoints(timeLeft);
+      const points = calculatePoints();
       addPointsToPlayer(points, true); // correct answer count
       setHasGuessedCorrectly(true);
       // Stop the song and go immediately to round score display
@@ -177,29 +295,36 @@ const InGamePage: React.FC<GuessifyProps> = () => {
   }
 
   // Continue to next round or navigate to end game screen
-  const handleContinueToNextRound = () => {
+const handleContinueToNextRound = () => {
+  // Only the host should emit the continue event
+  if (isHost && socket) {
     if (currentRound < totalRounds) {
-      setCurrentRound(r => r + 1);
-      setTimeLeft(roundTime);
-      setIsRoundActive(true);
-      setIsIntermission(false);
-      setSelectedIndex(null);
-    } else {
-      // Navigate to end game page
-      navigate("/end_game", {
-        state: {
-          players: [
-            {
-              name: player.name,
-              points: player.points,
-              correctAnswers: player.correctAnswers,
-              totalRounds: totalRounds, 
-            },
-          ],
-        },
+      // Emit event to advance all players to next round
+      socket.emit("host-continue-round", { 
+        code, 
+        nextRound: currentRound + 1,
+        totalRounds 
       });
+    } else {
+      // Emit event to navigate all players to end game
+      socket.emit("host-end-game", { code });
     }
-  };
+  }
+  
+  // Local state update (will be overridden by socket event for consistency)
+  if (currentRound < totalRounds) {
+    setCurrentRound(r => r + 1);
+    setTimeLeft(getTimeAsNumber(roundTime));
+    setIsRoundActive(true);
+    setIsIntermission(false);
+    setSelectedIndex(null);
+  } else {
+    // Navigate to end game page
+    navigate("/end_game", {
+      state: { code }
+    });
+  }
+};
 
 
   /* ----------------- EFFECTS ----------------- */ 
@@ -229,11 +354,16 @@ const InGamePage: React.FC<GuessifyProps> = () => {
         ...prev,
         previousPoints: prev.points,
       }));
+      
+      setPlayers(prev => prev.map(p => ({
+        ...p,
+        previousPoints: p.points,
+      })));
     }
 
     // Reset round state
     setIsRoundActive(true);
-    setTimeLeft(roundTime);
+    setTimeLeft(getTimeAsNumber(roundTime));
     setRoundStartTime(Date.now());
     setHasGuessedCorrectly(false);
     setHasSelectedCorrectly(false);
@@ -258,26 +388,35 @@ const InGamePage: React.FC<GuessifyProps> = () => {
 
   // Countdown timer logic
   useEffect(() => {
-    if (!isRoundActive || isIntermission) return;
+  // Don't run timer during intermission or when round is not active
+  if (!isRoundActive || isIntermission) return;
 
-    if (timeLeft <= 0) {
-      handleRoundEnd();
-      return;
-    }
+  if (timeLeft <= 0) {
+    // Time ran out - handle round end
+    handleRoundEnd();
+    setIsRoundActive(false);
+    socket?.emit("round-end", { code });
+    return;
+  }
 
-    const timer = setTimeout(() => setTimeLeft(t => t - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [timeLeft, isRoundActive, isIntermission]);
-
+  // Single timer that decrements every second
+  const timer = setTimeout(() => setTimeLeft((t: number) => t - 1), 1000);
+  
+  return () => clearTimeout(timer);
+}, [timeLeft, isRoundActive, isIntermission, socket, code]);
 
   /* ----------------- RENDER ----------------- */
 
+  // Early return for debugging
+  if (!code) {
+    return <div>No room code found in URL</div>;
+  }
+
   return (
-    <div className="game-2-container">
-      <AudioControls />
+    <div className="game-2-container" style={{ color: "white" }}>
       {isIntermission ? (
         <RoundScoreDisplay
-          players={[player]}
+          players={players}
           roundNumber={currentRound}
           totalRounds={totalRounds}
           onContinue={handleContinueToNextRound}
@@ -285,16 +424,16 @@ const InGamePage: React.FC<GuessifyProps> = () => {
           correctAnswer={isSingleSong ? currentSong?.title : correctAnswer}
           playerGotCorrect={isSingleSong ? hasGuessedCorrectly : hasSelectedCorrectly}
           isTimeUp={isTimeUp}
+          isHost={isHost}
         />
       ) : (
         <>
           <GameHeader
             roundNumber={`${currentRound}/${totalRounds}`}
-            timer={`${timeLeft}`}
+            timer={`${timeLeft} sec`}
             inviteCode={inviteCode}
           />
           <div className="game-2-body">
-            <Scoreboard players={[player]} />
             {isSingleSong ? (
               <SingleChoice
                 onCorrectGuess={handleCorrectGuess}

@@ -132,7 +132,7 @@ const SingleChoice: React.FC<SingleChoiceProps> = ({
       {/* Submit + feedback */}
       <div className="controls">
         <button
-          onClick={handleSubmitGuess}
+          onClick={() => handleSubmitGuess()}
           disabled={hasGuessedCorrectly}
           className={`submit-btn ${hasGuessedCorrectly ? "submit-btn--disabled" : ""}`}
         >

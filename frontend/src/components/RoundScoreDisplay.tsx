@@ -19,6 +19,7 @@ interface RoundScoreDisplayProps {
   readonly correctAnswer?: string;
   readonly playerGotCorrect?: boolean;
   readonly isTimeUp?: boolean;
+  readonly isHost?: boolean;
 }
 
 const RoundScoreDisplay: React.FC<RoundScoreDisplayProps> = ({
@@ -30,6 +31,7 @@ const RoundScoreDisplay: React.FC<RoundScoreDisplayProps> = ({
   correctAnswer,
   playerGotCorrect = true,
   isTimeUp = false,
+  isHost = false,
 }) => {
   // Sort players by points descending
   const sortedPlayers = [...players].sort((a, b) => b.points - a.points);
@@ -105,12 +107,20 @@ const RoundScoreDisplay: React.FC<RoundScoreDisplayProps> = ({
 
       <div className="continue-section">
         <button
-          className="continue-button"
-          onClick={onContinue}
-          aria-label={isFinalRound ? "View final results" : `Continue to Round ${roundNumber + 1}`}
+          className={`continue-button ${!isHost ? 'disabled' : ''}`}
+          onClick={isHost ? onContinue : undefined}
+          disabled={!isHost}
+          aria-label={
+            isHost 
+              ? (isFinalRound ? "View final results" : `Continue to Round ${roundNumber + 1}`)
+              : (isFinalRound ? "Waiting for host to view results" : `Waiting to start Round ${roundNumber + 1}`)
+          }
         >
-          {isFinalRound ? "View Final Results" : `Continue to Round ${roundNumber + 1}`}
-        </button>
+          {isHost 
+            ? (isFinalRound ? "View Final Results" : `Continue to Round ${roundNumber + 1}`)
+            : (isFinalRound ? "Waiting for host..." : `Waiting to start Round ${roundNumber + 1}`)
+          } 
+          </button>
       </div>
     </div>
   );

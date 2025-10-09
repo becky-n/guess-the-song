@@ -7,14 +7,16 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:uni": "VITE_SOCKET_URL=http://172.23.26.228:8080 VITE_API_BASE_URL=http://172.23.26.228:8080 vite"
   },
   "dependencies": {
-    "axios": "^1.11.0",
+    "axios": "^1.12.0",
     "dotenv": "^17.2.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.8.0"
+    "react-router-dom": "^7.8.0",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",

@@ -33,7 +33,7 @@ _A real-time multiplayer music guessing game built with Deezer_
 
 ### Prerequisites
 
-- Node.js (v18 or higher) & npm
+- Node.js (v20 or higher) & npm
 
 ### Installation
 
