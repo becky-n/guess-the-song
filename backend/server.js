@@ -23,7 +23,7 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: msg });
 });
 
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 8080;
 app.listen(port, () =>
   console.log(`Server running at http://localhost:${port}`)
 );

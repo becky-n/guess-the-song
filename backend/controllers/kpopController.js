@@ -1,28 +1,41 @@
-import { getKpopRandom, refreshKpopCache } from "../deezer/playlist.js";
-
-/**
- * GET /api/kpop?count=50
- * Returns N random previewable tracks from Deezer's K-Pop chart (cached).
- */
-export async function getRandomFromKpop(req, res, next) {
-  try {
-    const count = 79; // Hardcoded to 79 to match number of songs in Deezer Kpop playlist
-    const tracks = await getKpopRandom(count);
-    res.json({ count: tracks.length, tracks });
-  } catch (e) {
-    next(e);
-  }
+import { GENRES, getRandomByGenre, refreshGenre } from "../deezer/music.js";
+function toGenre(q) {
+  return String(q || "kpop").toLowerCase();
+}
+function toCount(q) {
+  const n = Number.parseInt(String(q ?? "50"), 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 50;
 }
 
-/**
- * POST /api/kpop/refresh
- * Clears the cache and refetches the chart pages - creates random order.
- */
-export async function refreshKpop(_req, res, next) {
-  try {
-    const size = await refreshKpopCache();
-    res.json({ ok: true, cacheSize: size });
-  } catch (e) {
-    next(e);
+export default class TracksController {
+  static async getRandomTracks(req, res, next) {
+    try {
+      const genre = toGenre(req.query.genre);
+      const count = toCount(req.query.count);
+
+      if (!GENRES.includes(genre)) {
+        return res.status(400).json({ error: "Unsupported genre", allowed: GENRES });
+      }
+
+      const tracks = await getRandomByGenre(genre, count);
+      res.json({ genre, count: tracks.length, tracks });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async refreshTracks(req, res, next) {
+    try {
+      const genre = toGenre(req.query.genre);
+
+      if (!GENRES.includes(genre)) {
+        return res.status(400).json({ error: "Unsupported genre", allowed: GENRES });
+      }
+
+      const refreshed = await refreshGenre(genre);
+      res.json({ genre, refreshed });
+    } catch (err) {
+      next(err);
+    }
   }
 }
