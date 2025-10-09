@@ -3,6 +3,7 @@ import axios from "axios";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
+export type Genre = "kpop" | "pop" | "hiphop" | "edm"; 
 type SongDTO = {
   id: string | number;
   name: string;
@@ -25,60 +26,31 @@ export default class SongService {
   private currentVolume: number = 0.6;
   private isMuted: boolean = false;
 
-  get currentAudioElement() {
-    return this.currentAudio;
-  }
-
-  get multiAudioElements() {
-    return this.multiAudios;
-  }
-
   constructor() {
-    this.baseUrl = `${API_BASE}/api/kpop`;
+    this.baseUrl = `${API_BASE}/api/tracks`;
     this.cachedSongs = [];
   }
 
   // --- API calls ---
-  async fetchRandomKpop(): Promise<Song[]> {
-    const res = await axios.get(this.baseUrl);
+  async fetchRandom(genre: Genre = "kpop", count = 50): Promise<Song[]> {
+    const res = await axios.get(this.baseUrl, { params: { genre, count } });
     const data = res.data;
 
-    this.cachedSongs = ((data.tracks ?? []) as SongDTO[]).map(
-      (track: SongDTO) => ({
-        id: String(track.id),
-        title: track.name,
-        artist:
-          track.artists && track.artists.length > 0
-            ? track.artists.join(", ")
-            : "Unknown",
-        previewUrl: track.preview_url ?? "",
-        imageUrl: track.image ?? "",
-        externalUrl: track.external_url ?? "",
-      })
-    );
+    this.cachedSongs = ((data.tracks ?? []) as SongDTO[]).map((track) => ({
+      id: String(track.id),
+      title: track.name,
+      artist: track.artists?.length ? track.artists.join(", ") : "Unknown",
+      previewUrl: track.preview_url ?? "",
+      imageUrl: track.image ?? "",
+      externalUrl: track.external_url ?? "",
+    }));
     return this.cachedSongs;
   }
 
-  async refreshKpop() {
-    const res = await axios.post(`${this.baseUrl}/refresh`);
-    const data = res.data;
-
-    this.cachedSongs = ((data.tracks ?? []) as SongDTO[]).map(
-      (track: SongDTO) => ({
-        id: String(track.id),
-        title: track.name,
-        artist:
-          track.artists && track.artists.length > 0
-            ? track.artists.join(", ")
-            : "Unknown",
-        previewUrl: track.preview_url ?? "",
-        imageUrl: track.image ?? "",
-        externalUrl: track.external_url ?? "",
-      })
-    );
-    return this.cachedSongs;
+  async refresh(genre: Genre = "kpop") {
+    const res = await axios.post(`${this.baseUrl}/refresh`, null, { params: { genre } });
+    return this.fetchRandom(genre);
   }
-
   getCachedSongs() {
     return this.cachedSongs;
   }
