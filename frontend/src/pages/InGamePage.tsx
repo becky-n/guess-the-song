@@ -133,7 +133,7 @@ const InGamePage: React.FC = () => {
           
           if (songIndex >= 0) {
             if (isSingleSong || isGuessArtist) {
-              songService.playSong(songIndex);
+              songService.playSong(songIndex, genre);
             } else if (isQuickGuess) {
               // For quick guess, play the snippet with same delay as host
               const duration = getSnippetDuration();
@@ -219,9 +219,11 @@ const InGamePage: React.FC = () => {
 
   const genre = (location.state?.genre ?? "kpop") as "kpop"|"pop"|"hiphop"|"edm";
 
-  useEffect(() => {
-    songService.fetchRandom(genre, 50).catch(console.error);
-  }, [genre]);
+ useEffect(() => {
+  const genre = (location.state?.genre ?? "kpop") as Genre;
+  console.log(`Fetching songs for genre: ${genre}`);
+  songService.fetchRandom(genre, 50).catch(console.error);
+}, [location.state?.genre]);
 
   // Get a random set of songs for multiple choice rounds
   const getRandomSongsForGame = (num: number): Song[] => {
@@ -238,8 +240,8 @@ const InGamePage: React.FC = () => {
   // Single player round logic (local generation)
   const startSinglePlayerRound = () => {
     if (isSingleSong || isGuessArtist) {
-      if (currentRound === 1) songService.playSong();
-      else songService.playNextSong();
+      if (currentRound === 1) songService.playSong(0,genre);
+      else songService.playNextSong(genre);
     } else if (isQuickGuess) {
       // Use secure random utilities for consistency
       const allSongs = songService.getCachedSongs();
@@ -284,8 +286,8 @@ const InGamePage: React.FC = () => {
         answer: isGuessArtist ? currentSongData.artist : currentSongData.title
       };
       
-      if (currentRound === 1) songService.playSong();
-      else songService.playNextSong();
+      if (currentRound === 1) songService.playSong(0, genre);
+      else songService.playNextSong(genre);
       
       return roundData;
     }

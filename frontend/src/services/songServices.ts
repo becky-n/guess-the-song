@@ -1,7 +1,7 @@
 import { type Song } from "../types/song";
 import axios from "axios";
 import { secureRandomInt } from "../utils/secureRandom";
-import { safeSetTimeoutAsync } from '../utils/safeTimers';
+import { safeSetTimeoutAsync } from "../utils/safeTimers";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
@@ -10,7 +10,7 @@ if (!API_BASE) {
 }
 console.log("Using API base URL:", API_BASE);
 
-export type Genre = "kpop" | "pop" | "hiphop" | "edm"; 
+export type Genre = "kpop" | "pop" | "hiphop" | "edm";
 type SongDTO = {
   id: string | number;
   name: string;
@@ -32,6 +32,14 @@ export default class SongService {
 
   private currentVolume: number = 0.6;
   private isMuted: boolean = false;
+  private playToken = 0;
+  private isAbortError = (e: unknown) =>
+    !!(
+      e &&
+      typeof e === "object" &&
+      "name" in e &&
+      (e as any).name === "AbortError"
+    );
 
   constructor() {
     this.baseUrl = `${API_BASE}/api/tracks`;
@@ -39,7 +47,9 @@ export default class SongService {
   }
 
   // --- API calls ---
-  async fetchRandom(genre: Genre = "kpop", count = 50): Promise<Song[]> {
+  async fetchRandom(genre: Genre, count = 50): Promise<Song[]> {
+    this.cachedSongs = [];
+
     const res = await axios.get(this.baseUrl, { params: { genre, count } });
     const data = res.data;
 
@@ -51,10 +61,12 @@ export default class SongService {
       imageUrl: track.image ?? "",
       externalUrl: track.external_url ?? "",
     }));
+
+      console.log(`Fetched ${this.cachedSongs.length} songs for genre: ${genre}`);
     return this.cachedSongs;
   }
 
-  async refresh(genre: Genre = "kpop") {
+  async refresh(genre: Genre) {
     await axios.post(`${this.baseUrl}/refresh`, null, { params: { genre } });
     return this.fetchRandom(genre);
   }
@@ -74,53 +86,76 @@ export default class SongService {
   }
 
   // --- Single-song controls ---
-  playSong(index: number = this.currentIndex) {
+  async playSong(index: number = this.currentIndex, genre: Genre) {
+    if (!this.cachedSongs.length) {
+      await this.fetchRandom(genre);
+    }
+    if (!this.cachedSongs.length) {
+      console.error("No songs available to play after fetching.");
+      return;
+    }
 
-    if (!this.cachedSongs.length) return;
+    // Cancel any in-flight plays
+    const myToken = ++this.playToken;
+
     this.stopSong();
 
     this.currentIndex = index;
     const song = this.cachedSongs[this.currentIndex];
-
-    if (!song.previewUrl) return;
+    if (!song.previewUrl) {
+      console.error("No preview URL available for the selected song.");
+      return;
+    }
 
     this.currentAudio = new Audio(song.previewUrl);
     this.currentAudio.volume = this.currentVolume;
-    this.currentAudio.muted = false;
-    this.isMuted = false;
-    if (this.onMuteStateChange) {
-      this.onMuteStateChange(false);
+    this.currentAudio.muted = this.isMuted;
+
+    try {
+      await this.currentAudio.play();
+      if (myToken !== this.playToken) return;
+      this.onTrackChange?.(song, this.currentIndex);
+    } catch (err) {
+      if (!this.isAbortError(err)) console.error("Playback failed:", err);
     }
-    this.currentAudio
-      .play()
-      .then(() => {
-        if (this.onTrackChange) this.onTrackChange(song, this.currentIndex);
-      })
-      .catch((err) => console.error("Playback failed:", err));
   }
 
-  playNextSong() {
-    if (!this.cachedSongs.length) return;
-    this.currentIndex = (this.currentIndex + 1) % this.cachedSongs.length;
-    this.playSong(this.currentIndex);
+ async playNextSong(genre: Genre) {
+  if (!this.cachedSongs.length) {
+    console.error("No cached songs available. Fetching new songs...");
+    await this.fetchRandom(genre); 
   }
+
+  if (!this.cachedSongs.length) {
+    console.error("No songs available to play after fetching.");
+    return;
+  }
+
+  this.currentIndex = (this.currentIndex + 1) % this.cachedSongs.length;
+  console.log(`Playing next song at index ${this.currentIndex} for genre: ${genre}`);
+  await this.playSong(this.currentIndex, genre);
+}
 
   pauseSong() {
     this.currentAudio?.pause();
-    this.multiAudios.forEach(audio => audio.pause());
+    this.multiAudios.forEach((audio) => audio.pause());
   }
 
   stopSong() {
-    if (this.currentAudio) {
-      this.currentAudio.pause();
-      this.currentAudio.currentTime = 0;
-      this.currentAudio = null;
-    }
-    this.stopMultiSong();
+  if (this.currentAudio) {
+    try { this.currentAudio.pause(); } catch {}
+    this.currentAudio.src = "";
+    this.currentAudio.load();
+    this.currentAudio = null;
   }
+  this.stopMultiSong();
+}
 
   // --- Quick snippet playback with flexible duration ---
-  async playQuickSnippet(index: number = this.currentIndex, duration: number = 3): Promise<void> {
+  async playQuickSnippet(
+    index: number = this.currentIndex,
+    duration: number = 3
+  ): Promise<void> {
     if (!this.cachedSongs.length) return;
     this.stopSong();
 
@@ -133,34 +168,38 @@ export default class SongService {
       this.currentAudio.volume = this.currentVolume;
       this.currentAudio.muted = false;
       this.isMuted = false;
-      
+
       if (this.onMuteStateChange) {
         this.onMuteStateChange(false);
       }
 
       const handleCanPlay = () => {
-        this.currentAudio!.removeEventListener('canplay', handleCanPlay);
-        
+        this.currentAudio!.removeEventListener("canplay", handleCanPlay);
+
         // Start from a random position (ensure we have enough time for the snippet)
-        const randomStart = secureRandomInt(Math.max(0, this.currentAudio!.duration - duration));
+        const randomStart = secureRandomInt(
+          Math.max(0, this.currentAudio!.duration - duration)
+        );
         this.currentAudio!.currentTime = randomStart;
-        
-        this.currentAudio!.play().then(() => {
-          if (this.onTrackChange) this.onTrackChange(song, this.currentIndex);
-          
-          // Stop after specified duration and properly clear the audio
-          safeSetTimeoutAsync(async () => {
-            this.stopSong(); // Use the existing stopSong method for complete cleanup
+
+        this.currentAudio!.play()
+          .then(() => {
+            if (this.onTrackChange) this.onTrackChange(song, this.currentIndex);
+
+            // Stop after specified duration and properly clear the audio
+            safeSetTimeoutAsync(async () => {
+              this.stopSong(); // Use the existing stopSong method for complete cleanup
+              resolve();
+            }, duration * 1000);
+          })
+          .catch((err) => {
+            console.error("Quick snippet playback failed:", err);
             resolve();
-          }, duration * 1000);
-        }).catch((err) => {
-          console.error("Quick snippet playback failed:", err);
-          resolve();
-        });
+          });
       };
 
-      this.currentAudio.addEventListener('canplay', handleCanPlay);
-      this.currentAudio.addEventListener('error', () => {
+      this.currentAudio.addEventListener("canplay", handleCanPlay);
+      this.currentAudio.addEventListener("error", () => {
         console.error("Audio loading failed");
         resolve();
       });
@@ -223,7 +262,7 @@ export default class SongService {
     if (this.currentAudio) {
       this.currentAudio.volume = volume;
     }
-    this.multiAudios.forEach(audio => {
+    this.multiAudios.forEach((audio) => {
       audio.volume = volume;
     });
   }
@@ -233,7 +272,7 @@ export default class SongService {
     if (this.currentAudio) {
       this.currentAudio.muted = muted;
     }
-    this.multiAudios.forEach(audio => {
+    this.multiAudios.forEach((audio) => {
       audio.muted = muted;
     });
     if (this.onMuteStateChange) {

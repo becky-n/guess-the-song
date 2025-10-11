@@ -16,9 +16,6 @@ const JoinRoom: React.FC<GuessifyProps> = () => {
   
   const handleCreateRoom = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    songService.fetchRandom().then((songs) => {
-      console.log("Fetched songs", songs);
-    });
 
     // Pass playerName along to SettingsPage
     navigate("/create_room", { state: { playerName } });
@@ -58,11 +55,6 @@ const JoinRoom: React.FC<GuessifyProps> = () => {
     setCode(value);
   };
 
-  useEffect(() => {
-    songService.fetchRandom().then((songs) => {
-    console.log("Fetched songs", songs);
-    });
-  }, []);
 
   return (
     <div className="guessify-container">
