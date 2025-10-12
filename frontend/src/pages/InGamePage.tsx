@@ -10,12 +10,12 @@ import RoundScoreDisplay from "../components/RoundScoreDisplay";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { songService } from "../services/songServices";
 import type { Song } from "../types/song";
-import {socket} from '../socket';
-import { 
-  generateMultipleChoiceOptions, 
-  selectRandomSong, 
+import { socket } from "../socket";
+import {
+  generateMultipleChoiceOptions,
+  selectRandomSong,
   getRandomSongs,
-  generateMixedSongsOptions 
+  generateMixedSongsOptions,
 } from "../utils/gameLogic";
 import { safeSetTimeoutAsync } from "../utils/safeTimers";
 
@@ -27,7 +27,7 @@ interface Player {
 }
 
 const getTimeAsNumber = (timeStr: string): number => {
-  return parseInt(timeStr.replace(' sec', ''));
+  return parseInt(timeStr.replace(" sec", ""));
 };
 
 type Genre = "kpop" | "pop" | "hiphop" | "edm";
@@ -40,8 +40,16 @@ const InGamePage: React.FC = () => {
   const { code } = useParams(); // room code from URL
 
   // --- Extract settings safely ---
-  const state = location.state 
-  const { playerName, isHost, rounds: totalRounds, guessTime: roundTime, gameMode, genre: Genre } = state;
+  const state = location.state;
+  const {
+    playerName,
+    isHost,
+    rounds: totalRounds,
+    guessTime: roundTime,
+    gameMode,
+    genre: selectedGenre,
+  } = state;
+  type Genre = "kpop" | "pop" | "hiphop" | "edm";
 
   // --- Player State ---
   const [players, setPlayers] = useState<Player[]>([]);
@@ -56,7 +64,7 @@ const InGamePage: React.FC = () => {
   //const roundTime = parseInt(state?guessTime || "30");
   //const totalRounds = parseInt(state?.rounds || "10");
   const isSingleSong = state?.gameMode === "Single Song";
-  const isMixedSongs = state?.gameMode === "Mixed Songs";  
+  const isMixedSongs = state?.gameMode === "Mixed Songs";
   const isGuessArtist = state?.gameMode === "Guess the Artist";
   const isQuickGuess1Sec = state?.gameMode === "Quick Guess - 1 Sec";
   const isQuickGuess3Sec = state?.gameMode === "Quick Guess - 3 Sec";
@@ -69,8 +77,7 @@ const InGamePage: React.FC = () => {
     if (isQuickGuess3Sec) return 3;
     if (isQuickGuess5Sec) return 5;
     return 3; // default
-  }
-
+  };
 
   // --- Round State ---
   const [currentRound, setCurrentRound] = useState(1);
@@ -93,28 +100,40 @@ const InGamePage: React.FC = () => {
   const [isTimeUp, setIsTimeUp] = useState(false);
 
   // --- Guess Artist Mode ---
-  const [hasGuessedArtistCorrectly, setHasGuessedArtistCorrectly] = useState(false);
+  const [hasGuessedArtistCorrectly, setHasGuessedArtistCorrectly] =
+    useState(false);
 
   // --- Quick Guess Mode ---
   const [hasPlayedSnippet, setHasPlayedSnippet] = useState(false);
 
   // --- Round Control Helpers ---
   const isRoundStarting = useRef(false);
+  const [songsReady, setSongsReady] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      await ensureSongsLoaded();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ----------------- SOCKET CONNECTION ----------------- */
   useEffect(() => {
-
-    socket.emit("get-room-players-scores", code );
+    socket.emit("get-room-players-scores", code);
 
     // Listen for players joined the room
-    socket.on("room-players-scores", ( playerScores ) => {
+    socket.on("room-players-scores", (playerScores) => {
       setPlayers(playerScores);
     });
 
     // Host starts round → everyone gets the same song
     socket.on("round-start", ({ song, choices, answer, startTime }) => {
-      console.log("Received round-start from host:", { song: song?.title, choices, answer });
-      
+      console.log("Received round-start from host:", {
+        song: song?.title,
+        choices,
+        answer,
+      });
+
       setCurrentSong(song);
       setOptions(choices);
       setCorrectAnswer(answer);
@@ -122,15 +141,16 @@ const InGamePage: React.FC = () => {
       setRoundStartTime(roundStart);
       setIsRoundActive(true);
       setTimeLeft(getTimeAsNumber(roundTime));
-      
+
       // For non-host players, handle audio playback and state updates
       const isSinglePlayer = state?.amountOfPlayers === 1;
       if (!isSinglePlayer && !isHost) {
         if (song) {
           // Find the song in cached songs and play it for non-host players
           const allSongs = songService.getCachedSongs();
-          const songIndex = allSongs.findIndex(s => s.title === song.title && s.artist === song.artist);
-          
+          const songIndex = allSongs.findIndex(
+            (s) => s.title === song.title && s.artist === song.artist
+          );
           if (songIndex >= 0) {
             if (isSingleSong || isGuessArtist) {
               songService.playSong(songIndex, genre);
@@ -147,7 +167,7 @@ const InGamePage: React.FC = () => {
           // Mixed songs mode - no specific song to play
           // The host handles the audio for mixed mode
         }
-        
+
         // Reset round state for non-host players
         setHasGuessedCorrectly(false);
         setHasSelectedCorrectly(false);
@@ -159,44 +179,53 @@ const InGamePage: React.FC = () => {
 
     // Score update - this will override the initial scores when available
     socket.on("score-update", (updatedPlayers: Player[]) => {
-  
       // Only update if we have valid data
-      if (updatedPlayers && Array.isArray(updatedPlayers) && updatedPlayers.length > 0) {
+      if (
+        updatedPlayers &&
+        Array.isArray(updatedPlayers) &&
+        updatedPlayers.length > 0
+      ) {
         // Sort players by points (highest first)
-        const sortedPlayers = [...updatedPlayers].sort((a, b) => b.points - a.points);
+        const sortedPlayers = [...updatedPlayers].sort(
+          (a, b) => b.points - a.points
+        );
         setPlayers(sortedPlayers);
-        
+
         // Update current player state from the players list
-        const currentPlayer = updatedPlayers.find(p => p.name === playerName);
+        const currentPlayer = updatedPlayers.find((p) => p.name === playerName);
         if (currentPlayer) {
           setPlayer(currentPlayer);
         }
       } else {
-        console.log("⚠️ WARNING: Received invalid score update data, keeping current players");
+        console.log(
+          "⚠️ WARNING: Received invalid score update data, keeping current players"
+        );
       }
     });
 
     // Host continues to next round - all players advance
-  socket.on("continue-to-next-round", ({ nextRound }) => {
-    console.log(`Host advanced all players to round ${nextRound}`);
-    setCurrentRound(nextRound);
-    setTimeLeft(getTimeAsNumber(roundTime));
-    setIsRoundActive(true);
-    setIsIntermission(false);
-    setSelectedIndex(null);
-    setHasGuessedCorrectly(false);
-    setHasSelectedCorrectly(false);
-    setShowCorrectAnswer(false);
-    setIsTimeUp(false);
-  });
-
-  // Host ends game - all players navigate to end game page
-  socket.on("navigate-to-end-game", () => {
-    console.log("Host ended the game, navigating all players to end game page");
-    navigate("/end_game", {
-      state: { code }
+    socket.on("continue-to-next-round", ({ nextRound }) => {
+      console.log(`Host advanced all players to round ${nextRound}`);
+      setCurrentRound(nextRound);
+      setTimeLeft(getTimeAsNumber(roundTime));
+      setIsRoundActive(true);
+      setIsIntermission(false);
+      setSelectedIndex(null);
+      setHasGuessedCorrectly(false);
+      setHasSelectedCorrectly(false);
+      setShowCorrectAnswer(false);
+      setIsTimeUp(false);
     });
-  });
+
+    // Host ends game - all players navigate to end game page
+    socket.on("navigate-to-end-game", () => {
+      console.log(
+        "Host ended the game, navigating all players to end game page"
+      );
+      navigate("/end_game", {
+        state: { code },
+      });
+    });
 
     return () => {
       socket.off("room-players-scores");
@@ -207,7 +236,7 @@ const InGamePage: React.FC = () => {
     };
   }, [code, playerName, navigate, roundTime]);
 
- /* ----------------- ROUND LOGIC ----------------- */
+  /* ----------------- ROUND LOGIC ----------------- */
   useEffect(() => {
     if (timeLeft === 0) {
       setIsRoundActive(false);
@@ -217,13 +246,17 @@ const InGamePage: React.FC = () => {
 
   /* ----------------- HELPER FUNCTIONS ----------------- */
 
-  const genre = (location.state?.genre ?? "kpop") as "kpop"|"pop"|"hiphop"|"edm";
+  const genre = (location.state?.genre ?? "kpop") as
+    | "kpop"
+    | "pop"
+    | "hiphop"
+    | "edm";
 
- useEffect(() => {
-  const genre = (location.state?.genre ?? "kpop") as Genre;
-  console.log(`Fetching songs for genre: ${genre}`);
-  songService.fetchRandom(genre, 50).catch(console.error);
-}, [location.state?.genre]);
+  useEffect(() => {
+    const genre = (location.state?.genre ?? "kpop") as Genre;
+    console.log(`Fetching songs for genre: ${genre}`);
+    songService.fetchRandom(genre, 50).catch(console.error);
+  }, [location.state?.genre]);
 
   // Get a random set of songs for multiple choice rounds
   const getRandomSongsForGame = (num: number): Song[] => {
@@ -233,24 +266,24 @@ const InGamePage: React.FC = () => {
 
   // Setup Quick Guess mode with single song and multiple choice options
 
-
   // Generate multiple choice options including correct answer + distractors (using secure utility)
 
-
   // Single player round logic (local generation)
-  const startSinglePlayerRound = () => {
+  const startSinglePlayerRound = async () => {
+    await ensureSongsLoaded();
     if (isSingleSong || isGuessArtist) {
-      if (currentRound === 1) songService.playSong(0,genre);
+      if (currentRound === 1) songService.playSong(0, genre);
       else songService.playNextSong(genre);
     } else if (isQuickGuess) {
       // Use secure random utilities for consistency
       const allSongs = songService.getCachedSongs();
-      const { song: selectedSong, index: randomIndex } = selectRandomSong(allSongs);
-      
+      const { song: selectedSong, index: randomIndex } =
+        selectRandomSong(allSongs);
+      console.log(allSongs);
       if (selectedSong) {
         // Generate consistent multiple choice options using secure utility
         const choices = generateMultipleChoiceOptions(selectedSong, allSongs);
-        
+
         setCurrentSong(selectedSong);
         setOptions(choices);
         setCorrectAnswer(selectedSong.title);
@@ -267,7 +300,10 @@ const InGamePage: React.FC = () => {
       const chosen = getRandomSongsForGame(3);
       songService.playMultiSong(chosen);
 
-      const opts = generateMixedSongsOptions(chosen, songService.getCachedSongs());
+      const opts = generateMixedSongsOptions(
+        chosen,
+        songService.getCachedSongs()
+      );
       setOptions(opts);
       setCorrectAnswer(chosen.map((s: Song) => s.title).join(", "));
     }
@@ -275,20 +311,21 @@ const InGamePage: React.FC = () => {
 
   // Helper function for single song/artist modes
   const setupSingleSongMode = () => {
-    const currentSongData = currentRound === 1 ? 
-      songService.getCurrentSong() : 
-      songService.getNextSong();
-    
+    const currentSongData =
+      currentRound === 1
+        ? songService.getCurrentSong()
+        : songService.getNextSong();
+
     if (currentSongData) {
       const roundData = {
         song: currentSongData,
         choices: [],
-        answer: isGuessArtist ? currentSongData.artist : currentSongData.title
+        answer: isGuessArtist ? currentSongData.artist : currentSongData.title,
       };
-      
+
       if (currentRound === 1) songService.playSong(0, genre);
       else songService.playNextSong(genre);
-      
+
       return roundData;
     }
     return null;
@@ -297,28 +334,29 @@ const InGamePage: React.FC = () => {
   // Helper function for quick guess mode
   const setupQuickGuessMode = () => {
     const allSongs = songService.getCachedSongs();
-    const { song: selectedSong, index: randomIndex } = selectRandomSong(allSongs);
-    
+    const { song: selectedSong, index: randomIndex } =
+      selectRandomSong(allSongs);
+
     if (selectedSong) {
       // Generate consistent multiple choice options using secure utility
       const choices = generateMultipleChoiceOptions(selectedSong, allSongs);
-      
+
       // Setup local state
       setCurrentSong(selectedSong);
       setOptions(choices);
       setCorrectAnswer(selectedSong.title);
-      
+
       // Play the snippet with a delay
       const snippetDuration = getSnippetDuration();
       safeSetTimeoutAsync(async () => {
         await songService.playQuickSnippet(randomIndex, snippetDuration);
         setHasPlayedSnippet(true);
       }, 1000);
-      
+
       return {
         song: selectedSong,
         choices,
-        answer: selectedSong.title
+        answer: selectedSong.title,
       };
     }
     return null;
@@ -329,19 +367,24 @@ const InGamePage: React.FC = () => {
     const chosen = getRandomSongsForGame(3);
     songService.playMultiSong(chosen);
 
-    const opts = generateMixedSongsOptions(chosen, songService.getCachedSongs());
+    const opts = generateMixedSongsOptions(
+      chosen,
+      songService.getCachedSongs()
+    );
     setOptions(opts);
     setCorrectAnswer(chosen.map((s: Song) => s.title).join(", "));
-    
+
     return {
       song: null, // Mixed mode doesn't have a single song
       choices: opts,
-      answer: chosen.map((s: Song) => s.title).join(", ")
+      answer: chosen.map((s: Song) => s.title).join(", "),
     };
   };
 
   // Multiplayer host round logic (generate and distribute)
-  const startMultiplayerHostRound = () => {
+  const startMultiplayerHostRound = async () => {
+     await ensureSongsLoaded();
+     
     let roundData: any = {};
 
     if (isSingleSong || isGuessArtist) {
@@ -357,21 +400,23 @@ const InGamePage: React.FC = () => {
       socket.emit("host-start-round", {
         code,
         ...roundData,
-        startTime: Date.now()
+        startTime: Date.now(),
       });
     }
   };
-  
 
   // Calculate points based on how quickly the answer was given (min 100, max 1000)
   const calculatePoints = (): number => {
     if (!roundStartTime) return 500; // fallback if no start time
     const roundTimeAsNumber = getTimeAsNumber(roundTime);
-    
+
     const maxPoints = 1000;
     const minPoints = 100;
     const elapsedTime = (Date.now() - roundStartTime) / 1000; // seconds
-    const timeRatio = Math.max(0, (roundTimeAsNumber - elapsedTime) / roundTimeAsNumber);
+    const timeRatio = Math.max(
+      0,
+      (roundTimeAsNumber - elapsedTime) / roundTimeAsNumber
+    );
     const points = Math.floor(minPoints + (maxPoints - minPoints) * timeRatio);
     return Math.max(points, minPoints);
   };
@@ -380,25 +425,29 @@ const InGamePage: React.FC = () => {
   const addPointsToPlayer = (points: number, correct: boolean = false) => {
     // Calculate new totals
     const newPoints = player.points + points;
-    const newCorrectAnswers = correct ? player.correctAnswers + 1 : player.correctAnswers;
+    const newCorrectAnswers = correct
+      ? player.correctAnswers + 1
+      : player.correctAnswers;
 
     // Update the current player's state
-    setPlayer(prev => ({
+    setPlayer((prev) => ({
       ...prev,
       points: newPoints,
       correctAnswers: newCorrectAnswers,
     }));
 
     // Update the players list
-    setPlayers(prev => prev.map(p => 
-      p.name === playerName 
-        ? {
-            ...p,
-            points: newPoints,
-            correctAnswers: newCorrectAnswers,
-          }
-        : p
-    ));
+    setPlayers((prev) =>
+      prev.map((p) =>
+        p.name === playerName
+          ? {
+              ...p,
+              points: newPoints,
+              correctAnswers: newCorrectAnswers,
+            }
+          : p
+      )
+    );
 
     // Emit score update to server with total points
     if (socket) {
@@ -406,7 +455,7 @@ const InGamePage: React.FC = () => {
         code,
         playerName,
         points: newPoints,
-        correctAnswers: newCorrectAnswers
+        correctAnswers: newCorrectAnswers,
       };
       socket.emit("update-score", scoreData);
     }
@@ -464,7 +513,7 @@ const InGamePage: React.FC = () => {
     if (!alreadyGuessed) {
       const points = calculatePoints();
       addPointsToPlayer(points, true); // correct answer count
-      
+
       if (isSingleSong) {
         setHasGuessedCorrectly(true);
       } else if (isGuessArtist) {
@@ -488,39 +537,38 @@ const InGamePage: React.FC = () => {
   }
 
   // Continue to next round or navigate to end game screen
-const handleContinueToNextRound = () => {
-  // Only the host should emit the continue event
-  if (isHost && socket) {
-    if (currentRound < totalRounds) {
-      // Emit event to advance all players to next round
-      socket.emit("host-continue-round", { 
-        code, 
-        nextRound: currentRound + 1,
-        totalRounds 
-      });
-    } else {
-      // Emit event to navigate all players to end game
-      socket.emit("host-end-game", { code });
+  const handleContinueToNextRound = () => {
+    // Only the host should emit the continue event
+    if (isHost && socket) {
+      if (currentRound < totalRounds) {
+        // Emit event to advance all players to next round
+        socket.emit("host-continue-round", {
+          code,
+          nextRound: currentRound + 1,
+          totalRounds,
+        });
+      } else {
+        // Emit event to navigate all players to end game
+        socket.emit("host-end-game", { code });
+      }
     }
-  }
-  
-  // Local state update (will be overridden by socket event for consistency)
-  if (currentRound < totalRounds) {
-    setCurrentRound(r => r + 1);
-    setTimeLeft(getTimeAsNumber(roundTime));
-    setIsRoundActive(true);
-    setIsIntermission(false);
-    setSelectedIndex(null);
-  } else {
-    // Navigate to end game page
-    navigate("/end_game", {
-      state: { code }
-    });
-  }
-};
 
+    // Local state update (will be overridden by socket event for consistency)
+    if (currentRound < totalRounds) {
+      setCurrentRound((r) => r + 1);
+      setTimeLeft(getTimeAsNumber(roundTime));
+      setIsRoundActive(true);
+      setIsIntermission(false);
+      setSelectedIndex(null);
+    } else {
+      // Navigate to end game page
+      navigate("/end_game", {
+        state: { code },
+      });
+    }
+  };
 
-  /* ----------------- EFFECTS ----------------- */ 
+  /* ----------------- EFFECTS ----------------- */
 
   // Subscribe to song changes
   useEffect(() => {
@@ -538,20 +586,23 @@ const handleContinueToNextRound = () => {
   useEffect(() => {
     if (isRoundStarting.current) return;
 
+    (async () => {
     isRoundStarting.current = true;
     songService.stopSong();
 
     // Update previous points before starting new round (except for first round)
     if (currentRound > 1) {
-      setPlayer(prev => ({
+      setPlayer((prev) => ({
         ...prev,
         previousPoints: prev.points,
       }));
-      
-      setPlayers(prev => prev.map(p => ({
-        ...p,
-        previousPoints: p.points,
-      })));
+
+      setPlayers((prev) =>
+        prev.map((p) => ({
+          ...p,
+          previousPoints: p.points,
+        }))
+      );
     }
 
     // Reset round state
@@ -567,38 +618,52 @@ const handleContinueToNextRound = () => {
 
     // Check if this is single player or multiplayer
     const isSinglePlayer = state?.amountOfPlayers === 1;
-    
+
     if (isSinglePlayer) {
       // Single player: generate songs locally as before
-      startSinglePlayerRound();
+      await startSinglePlayerRound();
     } else if (isHost) {
       // Multiplayer host: generate and distribute round data
-      startMultiplayerHostRound();
+      await startMultiplayerHostRound();
     }
     // Multiplayer non-host players will receive round data via socket event
 
     // Release "starting lock" after 1s
-    safeSetTimeoutAsync(async () => { isRoundStarting.current = false; }, 1000);
+    safeSetTimeoutAsync(async () => {
+      isRoundStarting.current = false;
+    }, 1000);
+    })();
   }, [currentRound, isSingleSong, isGuessArtist, isQuickGuess, roundTime]);
 
   // Countdown timer logic
   useEffect(() => {
-  // Don't run timer during intermission or when round is not active
-  if (!isRoundActive || isIntermission) return;
+    // Don't run timer during intermission or when round is not active
+    if (!isRoundActive || isIntermission) return;
 
-  if (timeLeft <= 0) {
-    // Time ran out - handle round end
-    handleRoundEnd();
-    setIsRoundActive(false);
-    socket?.emit("round-end", { code });
-    return;
-  }
+    if (timeLeft <= 0) {
+      // Time ran out - handle round end
+      handleRoundEnd();
+      setIsRoundActive(false);
+      socket?.emit("round-end", { code });
+      return;
+    }
 
-  // Single timer that decrements every second
-  const timer = safeSetTimeoutAsync(async () => setTimeLeft((t: number) => t - 1), 1000);
-  
-  return () => clearTimeout(timer);
-}, [timeLeft, isRoundActive, isIntermission, socket, code]);
+    // Single timer that decrements every second
+    const timer = safeSetTimeoutAsync(
+      async () => setTimeLeft((t: number) => t - 1),
+      1000
+    );
+
+    return () => clearTimeout(timer);
+  }, [timeLeft, isRoundActive, isIntermission, socket, code]);
+
+  const ensureSongsLoaded = async () => {
+    const g = (location.state?.genre ?? "kpop") as Genre;
+    if (songService.getCachedSongs().length === 0) {
+      await songService.fetchRandom(g, 50);
+    }
+    setSongsReady(true);
+  };
 
   /* ----------------- RENDER ----------------- */
 

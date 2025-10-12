@@ -85,6 +85,10 @@ export async function getRandomByGenre(genre = "kpop", count = 50) {
     pool = await buildPoolForGenre(genre);
     setCache(key, pool);
   }
+
+  const shuffledPool = [...pool];
+  shuffleInPlace(shuffledPool);
+  
   return pool.slice(0, count);
 }
 
