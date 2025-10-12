@@ -34,6 +34,7 @@ export default class SongService {
   private currentVolume: number = 0.6;
   private isMuted: boolean = false;
   private playToken = 0;
+
   private isAbortError = (e: unknown) =>
     !!(
       e &&
@@ -51,8 +52,8 @@ export default class SongService {
   async fetchRandom(genre: Genre, count = 50): Promise<Song[]> {
     const res = await axios.get(this.baseUrl, { params: { genre, count } });
     const data = res.data;
-
-   const next = ((data.tracks ?? []) as SongDTO[]).map((track) => ({
+    
+    const next = ((data.tracks ?? []) as SongDTO[]).map((track) => ({
       id: String(track.id),
       title: track.name,
       artist: track.artists?.length ? track.artists.join(", ") : "Unknown",
@@ -62,12 +63,12 @@ export default class SongService {
     }));
 
     this.cachedSongs = next;
-    this.loadedGenre = genre
+    this.loadedGenre = genre;
     console.log(`Fetched ${this.cachedSongs.length} songs for genre: ${genre}`);
     return this.cachedSongs;
   }
 
-   async ensureGenre(genre: Genre, count = 50): Promise<void> {
+  async ensureGenre(genre: Genre, count = 50): Promise<void> {
     if (this.loadedGenre !== genre || this.cachedSongs.length === 0) {
       await this.fetchRandom(genre, count);
     }
@@ -94,7 +95,7 @@ export default class SongService {
 
   // --- Single-song controls ---
   async playSong(index: number = this.currentIndex, genre: Genre) {
-    await this.ensureGenre(genre);  
+    await this.ensureGenre(genre);
 
     if (!this.cachedSongs.length) {
       await this.fetchRandom(genre);
@@ -129,22 +130,20 @@ export default class SongService {
     }
   }
 
- async playNextSong(genre: Genre) {
-  await this.ensureGenre(genre);  
-  if (!this.cachedSongs.length) {
-    console.error("No cached songs available. Fetching new songs...");
-    await this.fetchRandom(genre); 
-  }
+  async playNextSong(genre: Genre) {
+    await this.ensureGenre(genre);
+    if (!this.cachedSongs.length) {
+      console.error("No cached songs available. Fetching new songs...");
+      await this.fetchRandom(genre);
+    }
 
-  if (!this.cachedSongs.length) {
-    console.error("No songs available to play after fetching.");
-    return;
+    if (!this.cachedSongs.length) {
+      console.error("No songs available to play after fetching.");
+      return;
+    }
+    this.currentIndex = (this.currentIndex + 1) % this.cachedSongs.length;
+    await this.playSong(this.currentIndex, genre);
   }
-
-  this.currentIndex = (this.currentIndex + 1) % this.cachedSongs.length;
-  console.log(`Playing next song at index ${this.currentIndex} for genre: ${genre}`);
-  await this.playSong(this.currentIndex, genre);
-}
 
   pauseSong() {
     this.currentAudio?.pause();
@@ -152,14 +151,16 @@ export default class SongService {
   }
 
   stopSong() {
-  if (this.currentAudio) {
-    try { this.currentAudio.pause(); } catch {}
-    this.currentAudio.src = "";
-    this.currentAudio.load();
-    this.currentAudio = null;
+    if (this.currentAudio) {
+      try {
+        this.currentAudio.pause();
+      } catch {}
+      this.currentAudio.src = "";
+      this.currentAudio.load();
+      this.currentAudio = null;
+    }
+    this.stopMultiSong();
   }
-  this.stopMultiSong();
-}
 
   // --- Quick snippet playback with flexible duration ---
   async playQuickSnippet(
@@ -298,55 +299,55 @@ export default class SongService {
     return this.isMuted;
   }
 
+  // --- Audio unlock gate ---
+  private audioUnlocked = false;
+  private audioUnlockPromise: Promise<void> | null = null;
+  private resolveAudioUnlock?: () => void;
 
-  // --- Audio unlock gate (add to SongService)
-private audioUnlocked = false;
-private audioUnlockPromise: Promise<void> | null = null;
-private resolveAudioUnlock?: () => void;
-
-isAudioUnlocked() {
-  return this.audioUnlocked;
-}
-
-ensureAudioUnlocked(): Promise<void> {
-  if (this.audioUnlocked) return Promise.resolve();
-  if (!this.audioUnlockPromise) {
-    this.audioUnlockPromise = new Promise<void>(res => { this.resolveAudioUnlock = res; });
+  isAudioUnlocked() {
+    return this.audioUnlocked;
   }
-  return this.audioUnlockPromise;
-}
 
-async unlockAudio(): Promise<void> {
-  if (this.audioUnlocked) return;
-  try {
-    // Try WebAudio resume + 1 frame of silence
-    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
-    if (Ctx) {
-      const ctx = new Ctx();
-      await ctx.resume();
-      const buffer = ctx.createBuffer(1, 1, 22050);
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      src.connect(ctx.destination);
-      src.start(0);
+  ensureAudioUnlocked(): Promise<void> {
+    if (this.audioUnlocked) return Promise.resolve();
+    this.audioUnlockPromise ??= new Promise<void>((res) => {
+        this.resolveAudioUnlock = res;
+      });
+    return this.audioUnlockPromise;
+  }
+
+  async unlockAudio(): Promise<void> {
+    if (this.audioUnlocked) return;
+    try {
+      // Try WebAudio resume + 1 frame of silence
+      const Ctx =
+        (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (Ctx) {
+        const ctx = new Ctx();
+        await ctx.resume();
+        const buffer = ctx.createBuffer(1, 1, 22050);
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(ctx.destination);
+        src.start(0);
+      }
+
+      // Also kick a muted HTMLAudio element once
+      const a = new Audio();
+      a.muted = true;
+      a.src =
+        "data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
+      try {
+        await a.play();
+      } catch {}
+      a.pause();
+
+      this.audioUnlocked = true;
+      this.resolveAudioUnlock?.();
+    } catch {
+      // ignore: user may need another click
     }
-
-    // Also kick a muted HTMLAudio element once
-    const a = new Audio();
-    a.muted = true;
-    a.src = 'data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
-    try { await a.play(); } catch {}
-    a.pause();
-
-    this.audioUnlocked = true;
-    this.resolveAudioUnlock?.();
-  } catch {
-    // ignore: user may need another click
   }
 }
-
-}
-
-
 
 export const songService = new SongService();
