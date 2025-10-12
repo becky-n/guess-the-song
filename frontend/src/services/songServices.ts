@@ -52,7 +52,7 @@ export default class SongService {
   async fetchRandom(genre: Genre, count = 50): Promise<Song[]> {
     const res = await axios.get(this.baseUrl, { params: { genre, count } });
     const data = res.data;
-    
+
     const next = ((data.tracks ?? []) as SongDTO[]).map((track) => ({
       id: String(track.id),
       title: track.name,
@@ -217,14 +217,32 @@ export default class SongService {
     });
   }
 
+  async getRandomSongsForGenre(
+    count: number,
+    genre: Genre,
+  ): Promise<Song[]> {
+    await this.ensureGenre(genre);
+    let pool = this.getCachedSongs();
+
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, count);
+  }
+
   // --- Multi-song controls (Play exactly 3 songs simultaneously) ---
-  async playMultiSong(songs: Song[]) {
+  async playMultiSong(songs: Song[], genre: Genre) {
+    await this.ensureGenre(genre);
+
     this.stopMultiSong();
 
     // Take only first 3 songs with valid preview URLs
-    const validSongs = songs
-      .filter((s) => s.previewUrl && s.previewUrl.trim() !== "")
-      .slice(0, 3);
+    // const validSongs = songs
+    //   // .filter((s) => s.previewUrl && s.previewUrl.trim() !== "")
+    //   .slice(0, 3);
+
+    const validSongs = songs.filter((s) => s.previewUrl && s.previewUrl.trim() !== "").slice(0, 3);
 
     if (validSongs.length === 0) return;
 
@@ -311,8 +329,8 @@ export default class SongService {
   ensureAudioUnlocked(): Promise<void> {
     if (this.audioUnlocked) return Promise.resolve();
     this.audioUnlockPromise ??= new Promise<void>((res) => {
-        this.resolveAudioUnlock = res;
-      });
+      this.resolveAudioUnlock = res;
+    });
     return this.audioUnlockPromise;
   }
 

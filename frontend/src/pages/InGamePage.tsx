@@ -42,8 +42,6 @@ const InGamePage: React.FC = () => {
     isHost,
     rounds: totalRounds,
     guessTime: roundTime,
-    gameMode,
-    genre: selectedGenre,
   } = state;
 
   // --- Genre Type ---
@@ -254,16 +252,10 @@ const InGamePage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    const genre = (location.state?.genre ?? "kpop") as Genre;
-    songService.fetchRandom(genre, 50).catch(console.error);
-  }, [location.state?.genre]);
-
-  // Get a random set of songs for multiple choice rounds
-  const getRandomSongsForGame = (num: number): Song[] => {
-    const all = songService.getCachedSongs();
-    return getRandomSongs(all, num);
-  };
+  // useEffect(() => {
+  //   const genre = (location.state?.genre ?? "kpop") as Genre;
+  //   songService.fetchRandom(genre, 50).catch(console.error);
+  // }, [location.state?.genre]);
 
   // Single player round logic (local generation)
   const startSinglePlayerRound = async () => {
@@ -293,8 +285,8 @@ const InGamePage: React.FC = () => {
       }
     } else {
       // Mixed songs mode
-      const chosen = getRandomSongsForGame(3);
-      songService.playMultiSong(chosen);
+      const chosen = await songService.getRandomSongsForGenre(3, genre);
+      await songService.playMultiSong(chosen, genre);
 
       const opts = generateMixedSongsOptions(
         chosen,
@@ -359,9 +351,10 @@ const InGamePage: React.FC = () => {
   };
 
   // Helper function for mixed songs mode
-  const setupMixedSongsMode = () => {
-    const chosen = getRandomSongsForGame(3);
-    songService.playMultiSong(chosen);
+  const setupMixedSongsMode = async () => {
+    await songService.ensureGenre(genre); // make sure cache is for the current genre
+    const chosen = await songService.getRandomSongsForGenre(3, genre);
+    await songService.playMultiSong(chosen, genre);
 
     const opts = generateMixedSongsOptions(
       chosen,
@@ -371,7 +364,7 @@ const InGamePage: React.FC = () => {
     setCorrectAnswer(chosen.map((s: Song) => s.title).join(", "));
 
     return {
-      song: null, // Mixed mode doesn't have a single song
+      song: null,
       choices: opts,
       answer: chosen.map((s: Song) => s.title).join(", "),
     };
@@ -388,7 +381,7 @@ const InGamePage: React.FC = () => {
     } else if (isQuickGuess) {
       roundData = setupQuickGuessMode();
     } else {
-      roundData = setupMixedSongsMode();
+      roundData = await setupMixedSongsMode();
     }
 
     // Send round data to all players via socket
