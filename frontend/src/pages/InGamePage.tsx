@@ -127,12 +127,14 @@ const InGamePage: React.FC = () => {
     });
 
     // Host starts round → everyone gets the same song
-    socket.on("round-start", ({ song, choices, answer, startTime }) => {
+    socket.on("round-start", async ({ song, choices, answer, startTime, genre: hostGenre }) => {
       console.log("Received round-start from host:", {
         song: song?.title,
         choices,
         answer,
       });
+
+      
 
       setCurrentSong(song);
       setOptions(choices);
@@ -145,15 +147,16 @@ const InGamePage: React.FC = () => {
       // For non-host players, handle audio playback and state updates
       const isSinglePlayer = state?.amountOfPlayers === 1;
       if (!isSinglePlayer && !isHost) {
+        await songService.ensureGenre(hostGenre ?? genre);
         if (song) {
           // Find the song in cached songs and play it for non-host players
-          const allSongs = songService.getCachedSongs();
-          const songIndex = allSongs.findIndex(
+          const allSongs = await songService.getCachedSongs();
+          const songIndex =  allSongs.findIndex(
             (s) => s.title === song.title && s.artist === song.artist
           );
           if (songIndex >= 0) {
             if (isSingleSong || isGuessArtist) {
-              songService.playSong(songIndex, genre);
+              await songService.playSong(songIndex, genre);
             } else if (isQuickGuess) {
               // For quick guess, play the snippet with same delay as host
               const duration = getSnippetDuration();
@@ -400,6 +403,7 @@ const InGamePage: React.FC = () => {
       socket.emit("host-start-round", {
         code,
         ...roundData,
+        genre, 
         startTime: Date.now(),
       });
     }

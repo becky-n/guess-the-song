@@ -23,6 +23,7 @@ type SongDTO = {
 export default class SongService {
   public baseUrl: string;
   public cachedSongs: Song[] = [];
+  private loadedGenre: Genre | null = null;
 
   private currentIndex = 0;
   private currentAudio: HTMLAudioElement | null = null;
@@ -48,12 +49,10 @@ export default class SongService {
 
   // --- API calls ---
   async fetchRandom(genre: Genre, count = 50): Promise<Song[]> {
-    this.cachedSongs = [];
-
     const res = await axios.get(this.baseUrl, { params: { genre, count } });
     const data = res.data;
 
-    this.cachedSongs = ((data.tracks ?? []) as SongDTO[]).map((track) => ({
+   const next = ((data.tracks ?? []) as SongDTO[]).map((track) => ({
       id: String(track.id),
       title: track.name,
       artist: track.artists?.length ? track.artists.join(", ") : "Unknown",
@@ -62,8 +61,16 @@ export default class SongService {
       externalUrl: track.external_url ?? "",
     }));
 
-      console.log(`Fetched ${this.cachedSongs.length} songs for genre: ${genre}`);
+    this.cachedSongs = next;
+    this.loadedGenre = genre
+    console.log(`Fetched ${this.cachedSongs.length} songs for genre: ${genre}`);
     return this.cachedSongs;
+  }
+
+   async ensureGenre(genre: Genre, count = 50): Promise<void> {
+    if (this.loadedGenre !== genre || this.cachedSongs.length === 0) {
+      await this.fetchRandom(genre, count);
+    }
   }
 
   async refresh(genre: Genre) {
@@ -87,6 +94,8 @@ export default class SongService {
 
   // --- Single-song controls ---
   async playSong(index: number = this.currentIndex, genre: Genre) {
+    await this.ensureGenre(genre);  
+
     if (!this.cachedSongs.length) {
       await this.fetchRandom(genre);
     }
@@ -121,6 +130,7 @@ export default class SongService {
   }
 
  async playNextSong(genre: Genre) {
+  await this.ensureGenre(genre);  
   if (!this.cachedSongs.length) {
     console.error("No cached songs available. Fetching new songs...");
     await this.fetchRandom(genre); 
@@ -287,6 +297,56 @@ export default class SongService {
   getCurrentMutedState(): boolean {
     return this.isMuted;
   }
+
+
+  // --- Audio unlock gate (add to SongService)
+private audioUnlocked = false;
+private audioUnlockPromise: Promise<void> | null = null;
+private resolveAudioUnlock?: () => void;
+
+isAudioUnlocked() {
+  return this.audioUnlocked;
 }
+
+ensureAudioUnlocked(): Promise<void> {
+  if (this.audioUnlocked) return Promise.resolve();
+  if (!this.audioUnlockPromise) {
+    this.audioUnlockPromise = new Promise<void>(res => { this.resolveAudioUnlock = res; });
+  }
+  return this.audioUnlockPromise;
+}
+
+async unlockAudio(): Promise<void> {
+  if (this.audioUnlocked) return;
+  try {
+    // Try WebAudio resume + 1 frame of silence
+    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (Ctx) {
+      const ctx = new Ctx();
+      await ctx.resume();
+      const buffer = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      src.start(0);
+    }
+
+    // Also kick a muted HTMLAudio element once
+    const a = new Audio();
+    a.muted = true;
+    a.src = 'data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+    try { await a.play(); } catch {}
+    a.pause();
+
+    this.audioUnlocked = true;
+    this.resolveAudioUnlock?.();
+  } catch {
+    // ignore: user may need another click
+  }
+}
+
+}
+
+
 
 export const songService = new SongService();
