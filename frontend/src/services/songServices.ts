@@ -21,9 +21,6 @@ type SongDTO = {
 };
 
 export default class SongService {
-  private roomCode: string | null = null;
-  private roomPlaylist: Song[] = [];
-
   public baseUrl: string;
   public cachedSongs: Song[] = [];
   private loadedGenre: Genre | null = null;
@@ -53,14 +50,14 @@ export default class SongService {
 
   // --- API calls ---
   async fetchRandom(genre: Genre, count = 50): Promise<Song[]> {
-    const res = await axios.get(this.baseUrl, { params: { genre, count, ts: Date.now() } });
+    const res = await axios.get(this.baseUrl, { params: { genre, count,ts: Date.now()} });
     const data = res.data;
 
     const next = ((data.tracks ?? []) as SongDTO[]).map((track) => ({
       id: String(track.id),
       title: track.name,
       artist: track.artists?.length ? track.artists.join(", ") : "Unknown",
-     previewUrl: (track as any).preview_url ?? (track as any).preview ?? "",
+      previewUrl: (track as any).preview_url ?? (track as any).preview ?? "",
       imageUrl: track.image ?? "",
       externalUrl: track.external_url ?? "",
       genre: genre,
@@ -83,19 +80,8 @@ export default class SongService {
     return this.fetchRandom(genre);
   }
 
-  // async refreshGenre(genre: Genre): Promise<void> {
-  //   try {
-  //     const res = await axios.get(`${this.baseUrl}/refresh-genre`, {
-  //       params: { genre },
-  //     });
-  //     console.log(
-  //       `Refreshed genre: ${genre}, refreshed count: ${res.data.count}`
-  //     );
-  //   } catch (err) {
-  //     console.error("Failed to refresh genre:", err);
-  //   }
-  // }
   resetCache(newGenre?: Genre) {
+    this.stopSong();
     this.cachedSongs = [];
     this.loadedGenre = newGenre ?? null;
     this.currentIndex = 0;
@@ -121,9 +107,9 @@ export default class SongService {
   async playSong(index: number = this.currentIndex, genre: Genre) {
     await this.ensureGenre(genre);
 
-    // if (!this.cachedSongs.length) {
-    //   await this.fetchRandom(genre);
-    // }
+    if (!this.cachedSongs.length) {
+      await this.fetchRandom(genre);
+    }
     if (!this.cachedSongs.length) {
       console.error("No songs available to play after fetching.");
       return;
@@ -156,10 +142,10 @@ export default class SongService {
 
   async playNextSong(genre: Genre) {
     await this.ensureGenre(genre);
-    // if (!this.cachedSongs.length) {
-    //   console.error("No cached songs available. Fetching new songs...");
-    //   await this.fetchRandom(genre);
-    // }
+    if (!this.cachedSongs.length) {
+      console.error("No cached songs available. Fetching new songs...");
+      await this.fetchRandom(genre);
+    }
 
     if (!this.cachedSongs.length) {
       console.error("No songs available to play after fetching.");
@@ -240,29 +226,12 @@ export default class SongService {
       });
     });
   }
-  async getRandomSongsForGenre(count: number, genre: Genre): Promise<Song[]> {
-    await this.ensureGenre(genre);
-    // copy before shuffle so cached order stays stable
-    const pool = [...this.getCachedSongs()];
-
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    return pool.slice(0, count);
-  }
 
   // --- Multi-song controls (Play exactly 3 songs simultaneously) ---
-  async playMultiSong(songs: Song[], genre: Genre) {
-    await this.ensureGenre(genre);
-
+  async playMultiSong(songs: Song[]) {
     this.stopMultiSong();
 
     // Take only first 3 songs with valid preview URLs
-    // const validSongs = songs
-    //   // .filter((s) => s.previewUrl && s.previewUrl.trim() !== "")
-    //   .slice(0, 3);
-
     const validSongs = songs
       .filter((s) => s.previewUrl && s.previewUrl.trim() !== "")
       .slice(0, 3);
@@ -340,139 +309,7 @@ export default class SongService {
     return this.isMuted;
   }
 
-  setRoomPlaylist(code: string, playlist: Song[]) {
-    // stop anything currently playing before swapping playlists
-    this.stopSong();
-    this.roomCode = code;
-    this.roomPlaylist = Array.isArray(playlist) ? [...playlist] : [];
-    this.currentIndex = 0; // reset index so onTrackChange is consistent
-    this.playToken++; // invalidate any in-flight plays
-    console.log(
-      `Room ${code}: received playlist of ${this.roomPlaylist.length} tracks.`
-    );
-  }
-
-  // Optional: clear on room leave
-  clearRoomPlaylist() {
-    this.stopSong();
-    this.roomCode = null;
-    this.roomPlaylist = [];
-    this.currentIndex = 0;
-    this.playToken++; // nuke pending plays
-  }
-
-  // ---Multiplayer---
-  getRoomPlaylist(): Song[] {
-    return this.roomPlaylist;
-  }
-  getRoomSong(i: number): Song | null {
-    return (this.roomPlaylist && this.roomPlaylist[i]) ?? null;
-  }
-
-  async playRoomSong(index: number) {
-    const s = this.getRoomSong(index);
-    if (!s?.previewUrl) {
-      console.error("Room playlist song missing or no previewUrl");
-      return;
-    }
-
-    const myToken = ++this.playToken;
-    this.stopSong();
-
-    this.currentIndex = index;
-    this.currentAudio = new Audio(s.previewUrl);
-    this.currentAudio.volume = this.currentVolume;
-    this.currentAudio.muted = this.isMuted;
-
-    try {
-      await this.currentAudio.play();
-      if (myToken !== this.playToken) return; // canceled by newer play
-      this.onTrackChange?.(s, index);
-    } catch (err) {
-      if (!this.isAbortError(err)) console.error("Playback failed:", err);
-    }
-  }
-
-  async playRoomQuickSnippet(index: number, duration: number = 3) {
-    const s = this.getRoomSong(index);
-    if (!s?.previewUrl) return;
-
-    const myToken = ++this.playToken;
-    this.stopSong();
-
-    return new Promise<void>((resolve) => {
-      this.currentAudio = new Audio(s.previewUrl);
-      this.currentAudio.volume = this.currentVolume;
-      this.currentAudio.muted = false;
-      this.isMuted = false;
-      this.onMuteStateChange?.(false);
-
-      const handleCanPlay = () => {
-        this.currentAudio!.removeEventListener("canplay", handleCanPlay);
-        // if a newer play started while loading, bail
-        if (myToken !== this.playToken) return resolve();
-
-        const maxStart = Math.max(
-          0,
-          (this.currentAudio!.duration || 0) - duration
-        );
-        const randomStart = secureRandomInt(Math.floor(maxStart));
-        this.currentAudio!.currentTime = randomStart;
-
-        this.currentAudio!.play()
-          .then(() => {
-            if (myToken !== this.playToken) return resolve();
-            this.onTrackChange?.(s, index);
-            safeSetTimeoutAsync(async () => {
-              // only stop if this is still the active play
-              if (myToken === this.playToken) this.stopSong();
-              resolve();
-            }, duration * 1000);
-          })
-          .catch((err) => {
-            console.error("Quick snippet (room) failed:", err);
-            resolve();
-          });
-      };
-
-      this.currentAudio!.addEventListener("canplay", handleCanPlay);
-      this.currentAudio!.addEventListener("error", () => {
-        console.error("Audio loading failed");
-        resolve();
-      });
-    });
-  }
-
-  async playRoomMulti(indices: number[]) {
-    const myToken = ++this.playToken;
-    const picked = indices
-      .map((i) => this.getRoomSong(i))
-      .filter((s): s is Song => !!s && !!s.previewUrl)
-      .slice(0, 3);
-
-    this.stopMultiSong();
-    if (!picked.length) return;
-
-    this.multiAudios = picked.map((s) => {
-      const a = new Audio(s.previewUrl!);
-      a.volume = this.currentVolume;
-      return a;
-    });
-    this.isMuted = false;
-    this.onMuteStateChange?.(false);
-
-    for (let i = 0; i < this.multiAudios.length; i++) {
-      try {
-        // if a newer play started, abort further starts
-        if (myToken !== this.playToken) break;
-        await this.multiAudios[i].play();
-      } catch (e) {
-        console.error(`Failed to play room multi #${i}`, e);
-      }
-    }
-  }
-
-  // // --- Audio unlock gate ---
+  // --- Audio unlock gate ---
   private audioUnlocked = false;
   private audioUnlockPromise: Promise<void> | null = null;
   private resolveAudioUnlock?: () => void;

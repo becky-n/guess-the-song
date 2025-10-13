@@ -1,81 +1,60 @@
 import React, { useEffect, useState } from "react";
 import "../css/JoinRoom.css";
+import { songService } from "../services/songServices";
 import { useNavigate, useLocation } from "react-router-dom";
-import { isValidRoomCode } from "../utils/roomCode";
+import { isValidRoomCode } from "../utils/roomCode.tsx";
+
 
 interface GuessifyProps {}
 
 const JoinRoom: React.FC<GuessifyProps> = () => {
   const [code, setCode] = useState<string>("");
-  const [name, setName] = useState<string>("");
 
   const navigate = useNavigate();
   const location = useLocation();
-  const navPlayerName = (location.state as { playerName?: string } | null)?.playerName;
-
-  // Persist player name so refresh on Waiting/Join doesn’t lose it
-  useEffect(() => {
-    if (navPlayerName && navPlayerName.trim()) {
-      setName(navPlayerName.trim());
-      sessionStorage.setItem("guessify_playerName", navPlayerName.trim());
-    } else {
-      const fromStorage = sessionStorage.getItem("guessify_playerName");
-      if (fromStorage) setName(fromStorage);
-    }
-  }, [navPlayerName]);
-
+  const playerName = location.state?.playerName; // get name from EnterName
+  
   const handleCreateRoom = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    if (!name?.trim()) {
-      alert("Please enter your name first!");
-      return;
-    }
-    // Only pass playerName; server will own room config later
-    navigate("/create_room", { state: { playerName: name.trim() } });
+
+    // Pass playerName along to SettingsPage
+    navigate("/create_room", { state: { playerName } });
   };
 
-  const handleJoinRoom = (e?: React.MouseEvent<HTMLButtonElement>) => {
-    if (e) e.preventDefault();
-
-    const trimmed = code.trim();
-    if (!trimmed) {
-      alert("Please enter a room code!");
-      return;
-    }
-    if (!name?.trim()) {
+  const handleJoinRoom = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    if (!code.trim()) {
+          alert("Please enter a room code!");
+          return;
+        }
+    
+    if (!playerName) {
       alert("Please enter your name first!");
       return;
     }
-    if (!isValidRoomCode(trimmed)) {
+
+    if (!isValidRoomCode(code)) {
       alert("Invalid room code format! Code should be 6 characters (letters and numbers).");
       return;
     }
-
-    // Navigate to waiting room; server will emit room-info there
-    navigate(`/waiting/${trimmed}`, {
-      state: {
-        playerName: name.trim(),
-        isHost: false,
-      },
+    // Navigate to waiting room first, then host will start the game
+    navigate(`/waiting/${code}`, { 
+      state: { 
+        playerName,
+        isHost: false
+      } 
     });
   };
 
-  const handleBackClick = (): void => {
-    navigate("/");
-  };
+  const handleBackClick = (): void => { 
+    navigate("/"); 
+  }; 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     setCode(value);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && isValidRoomCode(code) && name?.trim()) {
-      handleJoinRoom();
-    }
-  };
-
-  const isJoinEnabled = isValidRoomCode(code) && !!name?.trim();
 
   return (
     <div className="guessify-container">
@@ -96,14 +75,12 @@ const JoinRoom: React.FC<GuessifyProps> = () => {
             placeholder="ENTER CODE"
             value={code}
             onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
             className="guessify-input"
-            maxLength={6}          
+            maxLength={8}
           />
-          <button
-            className="guessify-join-button"
-            onClick={handleJoinRoom}
-            disabled={!isJoinEnabled}  
+          <button className="guessify-join-button"             
+          onClick={handleJoinRoom}
+          disabled={!code.trim()}
           >
             JOIN
           </button>

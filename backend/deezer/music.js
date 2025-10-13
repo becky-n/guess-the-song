@@ -89,7 +89,7 @@ export async function getRandomByGenre(genre, count = 50) {
   const shuffledPool = [...pool];
   shuffleInPlace(shuffledPool);
   
-  return pool.slice(0, count);
+  return shuffledPool.slice(0, count);
 }
 
 export async function refreshGenre(genre) {
