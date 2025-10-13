@@ -37,6 +37,9 @@ const InGamePage: React.FC = () => {
 
   // --- Extract settings safely ---
   const state = location.state;
+
+  const isSinglePlayer = state?.amountOfPlayers === 1;
+
   const {
     playerName,
     isHost,
@@ -44,13 +47,52 @@ const InGamePage: React.FC = () => {
     guessTime: roundTime,
   } = state;
 
-  // --- Genre Type ---
+  // --- effectiveGenre Type ---
   type Genre = "kpop" | "pop" | "hiphop" | "edm";
-  const genre = (location.state?.genre) as
-    | "kpop"
-    | "pop"
-    | "hiphop"
-    | "edm";
+  // const effectiveGenre = location.state?.effectiveGenre as "kpop" | "pop" | "hiphop" | "edm";
+
+  type GameMode =
+    | "Single Song"
+    | "Mixed Songs"
+    | "Guess the Artist"
+    | "Quick Guess";
+
+  type RoomConfig = {
+    genre: Genre;
+    gameMode: GameMode;
+    rounds: number;
+    guessTimeSec: number;
+    snippetDurationSec?: 1 | 3 | 5;
+  };
+
+  type RoomInfoEvent = {
+    code: string;
+    config: RoomConfig;
+    playlist: Song[];
+  };
+
+  type RoundStartEvent =
+    | {
+        code: string;
+        round: number;
+        startTime: number;
+        mode: "Single Song" | "Guess the Artist";
+        pick: { playlistIndex: number };
+      }
+    | {
+        code: string;
+        round: number;
+        startTime: number;
+        mode: "Quick Guess";
+        pick: { playlistIndex: number; choiceIndices: number[] };
+      }
+    | {
+        code: string;
+        round: number;
+        startTime: number;
+        mode: "Mixed Songs";
+        pick: { playlistIndices: number[]; choiceIndices: number[] };
+      };
 
   // --- Player State ---
   const [players, setPlayers] = useState<Player[]>([]);
@@ -60,6 +102,10 @@ const InGamePage: React.FC = () => {
     previousPoints: 0,
     correctAnswers: 0,
   });
+
+  const [roomConfig, setRoomConfig] = useState<RoomConfig | null>(null);
+  const fallbackGenre = location.state?.genre as Genre;
+  const effectiveGenre = roomConfig?.genre ?? fallbackGenre;
 
   // --- Game Settings ---
   //const roundTime = parseInt(state?guessTime || "30");
@@ -74,10 +120,11 @@ const InGamePage: React.FC = () => {
 
   // Get the snipper duration for quick guess modes
   const getSnippetDuration = () => {
+    if (!isSinglePlayer) return roomConfig?.snippetDurationSec ?? 3;
     if (isQuickGuess1Sec) return 1;
     if (isQuickGuess3Sec) return 3;
     if (isQuickGuess5Sec) return 5;
-    return 3; // default
+    return 3;
   };
 
   // --- Round State ---
@@ -111,102 +158,112 @@ const InGamePage: React.FC = () => {
   const isRoundStarting = useRef(false);
   const [songsReady, setSongsReady] = useState(false);
 
+  const roomConfigRef = useRef<RoomConfig | null>(null);
+  useEffect(() => {
+    roomConfigRef.current = roomConfig;
+  }, [roomConfig]);
+
   /* ----------------- SOCKET CONNECTION ----------------- */
   useEffect(() => {
-    socket.emit("get-room-players-scores", code);
+    songService.stopSong();
+    songService.clearRoomPlaylist();
+    songService.resetCache();
 
-    // Listen for players joined the room
-    socket.on("room-players-scores", (playerScores) => {
-      setPlayers(playerScores);
-    });
+    // ask server for room info on mount
+    socket.emit("get-room-info", code);
 
-    // Host starts round → everyone gets the same song
-    socket.on(
-      "round-start",
-      async ({ song, choices, answer, startTime, genre: hostGenre }) => {
-        console.log("Received round-start from host:", {
-          song: song?.title,
-          choices,
-          answer,
-          genre: hostGenre,
-        });
+    // ---- define handlers (named so we can off() them) ----
+    const onRoomInfo = (info: RoomInfoEvent) => {
+      setRoomConfig(info.config);
+      songService.setRoomPlaylist(info.code, info.playlist);
+      console.log("room-info", {
+        code: info.code,
+        genre: info.config.genre,
+        playlistLen: info.playlist?.length,
+      });
 
-        setCurrentSong(song);
-        setOptions(choices);
-        setCorrectAnswer(answer);
-        const roundStart = startTime || Date.now();
-        setRoundStartTime(roundStart);
-        setIsRoundActive(true);
-        setTimeLeft(getTimeAsNumber(roundTime));
+      if (!info.playlist?.length) {
+        console.warn("Room playlist is empty — server did not supply tracks");
+      }
 
-        // For non-host players, handle audio playback and state updates
-        const isSinglePlayer = state?.amountOfPlayers === 1;
-        if (!isSinglePlayer && !isHost) {
-          await songService.ensureGenre(hostGenre);
-          if (song) {
-            // Find the song in cached songs and play it for non-host players
-            const allSongs = songService.getCachedSongs();
-            const songIndex = allSongs.findIndex(
-              (s) => s.title === song.title && s.artist === song.artist
+      if (!info.playlist?.some((s) => s.previewUrl)) {
+        console.warn("Room playlist has no playable previewUrl values");
+      }
+
+      if (!isSinglePlayer) setTimeLeft(info.config.guessTimeSec);
+    };
+
+    const onRoundStart = async (evt: RoundStartEvent) => {
+      const cfg = roomConfigRef.current;
+      if (!cfg) return;
+
+      const songs = songService.getRoomPlaylist();
+      setRoundStartTime(evt.startTime);
+      setIsRoundActive(true);
+
+      const elapsedSec = Math.floor((Date.now() - evt.startTime) / 1000);
+      setTimeLeft(Math.max(0, cfg.guessTimeSec - elapsedSec));
+
+      setHasGuessedCorrectly(false);
+      setHasSelectedCorrectly(false);
+      setShowCorrectAnswer(false);
+      setIsTimeUp(false);
+      setHasGuessedArtistCorrectly(false);
+      setSelectedIndex(null);
+      setHasPlayedSnippet(false);
+
+      if (evt.mode === "Single Song" || evt.mode === "Guess the Artist") {
+        const i = evt.pick.playlistIndex;
+        const s = songs[i];
+        if (s) {
+          await songService.playRoomSong(i);
+          setCurrentSong(s);
+          setOptions([]);
+          setCorrectAnswer(
+            evt.mode === "Guess the Artist" ? s.artist : s.title
+          );
+        }
+      } else if (evt.mode === "Quick Guess") {
+        const i = evt.pick.playlistIndex;
+        const s = songs[i];
+        if (s) {
+          setCurrentSong(s);
+          setOptions(
+            evt.pick.choiceIndices.map((ci) => songs[ci]?.title ?? "")
+          );
+          setCorrectAnswer(s.title);
+          const delayMs = Math.max(0, 1000 - (Date.now() - evt.startTime));
+          safeSetTimeoutAsync(async () => {
+            await songService.playRoomQuickSnippet(
+              i,
+              cfg.snippetDurationSec ?? 3
             );
-            if (songIndex >= 0) {
-              if (isSingleSong || isGuessArtist) {
-                await songService.playSong(songIndex, genre);
-              } else if (isQuickGuess) {
-                // For quick guess, play the snippet with same delay as host
-                const duration = getSnippetDuration();
-                safeSetTimeoutAsync(async () => {
-                  await songService.playQuickSnippet(songIndex, duration);
-                  setHasPlayedSnippet(true);
-                }, 1000);
-              }
-            }
-          } else if (choices && choices.length > 0) {
-            // Mixed songs mode - no specific song to play
-            // The host handles the audio for mixed mode
-          }
-
-          // Reset round state for non-host players
-          setHasGuessedCorrectly(false);
-          setHasSelectedCorrectly(false);
-          setShowCorrectAnswer(false);
-          setIsTimeUp(false);
-          setHasGuessedArtistCorrectly(false);
+            setHasPlayedSnippet(true);
+          }, delayMs);
         }
+      } else if (evt.mode === "Mixed Songs") {
+        const picks = evt.pick.playlistIndices;
+        await songService.playRoomMulti(picks);
+        setOptions(evt.pick.choiceIndices.map((ci) => songs[ci]?.title ?? ""));
+        setCorrectAnswer(picks.map((pi) => songs[pi]?.title ?? "").join(", "));
       }
-    );
+    };
 
-    // Score update - this will override the initial scores when available
-    socket.on("score-update", (updatedPlayers: Player[]) => {
-      // Only update if we have valid data
-      if (
-        updatedPlayers &&
-        Array.isArray(updatedPlayers) &&
-        updatedPlayers.length > 0
-      ) {
-        // Sort players by points (highest first)
-        const sortedPlayers = [...updatedPlayers].sort(
-          (a, b) => b.points - a.points
-        );
-        setPlayers(sortedPlayers);
+    const onScoreUpdate = (updatedPlayers: Player[]) => {
+      if (!updatedPlayers?.length) return;
+      const sorted = [...updatedPlayers].sort((a, b) => b.points - a.points);
+      setPlayers(sorted);
+      const me = updatedPlayers.find((p) => p.name === playerName);
+      if (me) setPlayer(me);
+    };
 
-        // Update current player state from the players list
-        const currentPlayer = updatedPlayers.find((p) => p.name === playerName);
-        if (currentPlayer) {
-          setPlayer(currentPlayer);
-        }
-      } else {
-        console.log(
-          "⚠️ WARNING: Received invalid score update data, keeping current players"
-        );
-      }
-    });
-
-    // Host continues to next round - all players advance
-    socket.on("continue-to-next-round", ({ nextRound }) => {
-      console.log(`Host advanced all players to round ${nextRound}`);
+    const onContinue = ({ nextRound }: { nextRound: number }) => {
       setCurrentRound(nextRound);
-      setTimeLeft(getTimeAsNumber(roundTime));
+      setTimeLeft(
+        isSinglePlayer
+          ? getTimeAsNumber(roundTime)
+          : roomConfigRef.current?.guessTimeSec ?? 0
+      );
       setIsRoundActive(true);
       setIsIntermission(false);
       setSelectedIndex(null);
@@ -214,26 +271,29 @@ const InGamePage: React.FC = () => {
       setHasSelectedCorrectly(false);
       setShowCorrectAnswer(false);
       setIsTimeUp(false);
-    });
-
-    // Host ends game - all players navigate to end game page
-    socket.on("navigate-to-end-game", () => {
-      console.log(
-        "Host ended the game, navigating all players to end game page"
-      );
-      navigate("/end_game", {
-        state: { code },
-      });
-    });
-
-    return () => {
-      socket.off("room-players-scores");
-      socket.off("round-start");
-      socket.off("score-update");
-      socket.off("continue-to-next-round");
-      socket.off("navigate-to-end-game");
     };
-  }, [code, playerName, navigate, roundTime]);
+
+    const onEnd = () => {
+      navigate("/end_game", { state: { code } });
+    };
+
+    // ---- register once ----
+    socket.on("room-info", onRoomInfo);
+    socket.on("round-start", onRoundStart);
+    socket.on("score-update", onScoreUpdate);
+    socket.on("continue-to-next-round", onContinue);
+    socket.on("navigate-to-end-game", onEnd);
+
+    // ---- cleanup (NOTE: same handler refs) ----
+    return () => {
+      socket.off("room-info", onRoomInfo);
+      socket.off("round-start", onRoundStart);
+      socket.off("score-update", onScoreUpdate);
+      socket.off("continue-to-next-round", onContinue);
+      socket.off("navigate-to-end-game", onEnd);
+    };
+    // keep deps minimal to avoid re-binding
+  }, [code, navigate, isSinglePlayer, playerName]);
 
   /* ----------------- ROUND LOGIC ----------------- */
   useEffect(() => {
@@ -253,13 +313,12 @@ const InGamePage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-
   // Single player round logic (local generation)
   const startSinglePlayerRound = async () => {
     await ensureSongsLoaded();
     if (isSingleSong || isGuessArtist) {
-      if (currentRound === 1) songService.playSong(0, genre);
-      else songService.playNextSong(genre);
+      if (currentRound === 1) songService.playSong(0, effectiveGenre);
+      else songService.playNextSong(effectiveGenre);
     } else if (isQuickGuess) {
       // Use secure random utilities for consistency
       const allSongs = songService.getCachedSongs();
@@ -282,8 +341,11 @@ const InGamePage: React.FC = () => {
       }
     } else {
       // Mixed songs mode
-      const chosen = await songService.getRandomSongsForGenre(3, genre);
-      await songService.playMultiSong(chosen, genre);
+      const chosen = await songService.getRandomSongsForGenre(
+        3,
+        effectiveGenre
+      );
+      await songService.playMultiSong(chosen, effectiveGenre);
 
       const opts = generateMixedSongsOptions(
         chosen,
@@ -308,8 +370,8 @@ const InGamePage: React.FC = () => {
         answer: isGuessArtist ? currentSongData.artist : currentSongData.title,
       };
 
-      if (currentRound === 1) songService.playSong(0, genre);
-      else songService.playNextSong(genre);
+      if (currentRound === 1) songService.playSong(0, effectiveGenre);
+      else songService.playNextSong(effectiveGenre);
 
       return roundData;
     }
@@ -349,9 +411,9 @@ const InGamePage: React.FC = () => {
 
   // Helper function for mixed songs mode
   const setupMixedSongsMode = async () => {
-    await songService.ensureGenre(genre); // make sure cache is for the current genre
-    const chosen = await songService.getRandomSongsForGenre(3, genre);
-    await songService.playMultiSong(chosen, genre);
+    await songService.ensureGenre(effectiveGenre); // make sure cache is for the current effectiveGenre
+    const chosen = await songService.getRandomSongsForGenre(3, effectiveGenre);
+    await songService.playMultiSong(chosen, effectiveGenre);
 
     const opts = generateMixedSongsOptions(
       chosen,
@@ -369,26 +431,8 @@ const InGamePage: React.FC = () => {
 
   // Multiplayer host round logic (generate and distribute)
   const startMultiplayerHostRound = async () => {
-    await ensureSongsLoaded();
-
-    let roundData: any = {};
-
-    if (isSingleSong || isGuessArtist) {
-      roundData = setupSingleSongMode();
-    } else if (isQuickGuess) {
-      roundData = setupQuickGuessMode();
-    } else {
-      roundData = await setupMixedSongsMode();
-    }
-
-    // Send round data to all players via socket
-    if (socket && code && roundData) {
-      socket.emit("host-start-round", {
-        code,
-        ...roundData,
-        genre,
-        startTime: Date.now(),
-      });
+    if (socket && code) {
+      socket.emit("host-start-round", { code });
     }
   };
 
@@ -603,9 +647,6 @@ const InGamePage: React.FC = () => {
       setHasPlayedSnippet(false);
       setHasGuessedArtistCorrectly(false);
 
-      // Check if this is single player or multiplayer
-      const isSinglePlayer = state?.amountOfPlayers === 1;
-
       if (isSinglePlayer) {
         // Single player: generate songs locally as before
         await startSinglePlayerRound();
@@ -645,7 +686,8 @@ const InGamePage: React.FC = () => {
   }, [timeLeft, isRoundActive, isIntermission, socket, code]);
 
   const ensureSongsLoaded = async () => {
-    const g = (location.state?.genre) as Genre;
+    if (!isSinglePlayer) return; // MP uses room playlist; nothing to fetch here
+    const g = effectiveGenre as Genre;
     if (songService.getCachedSongs().length === 0) {
       await songService.fetchRandom(g, 50);
     }
