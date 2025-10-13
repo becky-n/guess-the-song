@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "../css/GuessSong.css";
 import PlayIcon from "../assets/Play.png";
-import { songService } from "../services/songServices";
+import { songService, type Genre } from "../services/songServices";
 import type { Song } from "../types/song";
 
 interface SingleChoiceProps {
@@ -131,8 +131,18 @@ const SingleChoice: React.FC<SingleChoiceProps> = ({
       {/* Play song button */}
       <div className="central-circle-container">
         <button
-          className="central-circle"
-          onClick={() => songService.playSong()}
+         onClick={() => {
+      if (currentSong) {
+        const songIndex = songService.getCachedSongs().findIndex(
+          (s) => s.id === currentSong.id
+        );
+        if (songIndex >= 0) {
+          songService.playSong(songIndex, currentSong.genre as Genre);
+        } else {
+          console.error("Song not found in cache:", currentSong);
+        }
+      }
+    }}
         >
           <img src={PlayIcon} className="circle-image" alt="Play button" />
         </button>

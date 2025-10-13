@@ -46,7 +46,7 @@ const InGamePage: React.FC = () => {
 
   // --- Genre Type ---
   type Genre = "kpop" | "pop" | "hiphop" | "edm";
-  const genre = (location.state?.genre ?? "kpop") as
+  const genre = (location.state?.genre) as
     | "kpop"
     | "pop"
     | "hiphop"
@@ -128,6 +128,7 @@ const InGamePage: React.FC = () => {
           song: song?.title,
           choices,
           answer,
+          genre: hostGenre,
         });
 
         setCurrentSong(song);
@@ -141,7 +142,7 @@ const InGamePage: React.FC = () => {
         // For non-host players, handle audio playback and state updates
         const isSinglePlayer = state?.amountOfPlayers === 1;
         if (!isSinglePlayer && !isHost) {
-          await songService.ensureGenre(hostGenre ?? genre);
+          await songService.ensureGenre(hostGenre);
           if (song) {
             // Find the song in cached songs and play it for non-host players
             const allSongs = songService.getCachedSongs();
@@ -252,10 +253,6 @@ const InGamePage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // useEffect(() => {
-  //   const genre = (location.state?.genre ?? "kpop") as Genre;
-  //   songService.fetchRandom(genre, 50).catch(console.error);
-  // }, [location.state?.genre]);
 
   // Single player round logic (local generation)
   const startSinglePlayerRound = async () => {
@@ -648,7 +645,7 @@ const InGamePage: React.FC = () => {
   }, [timeLeft, isRoundActive, isIntermission, socket, code]);
 
   const ensureSongsLoaded = async () => {
-    const g = (location.state?.genre ?? "kpop") as Genre;
+    const g = (location.state?.genre) as Genre;
     if (songService.getCachedSongs().length === 0) {
       await songService.fetchRandom(g, 50);
     }

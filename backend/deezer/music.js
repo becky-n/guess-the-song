@@ -76,7 +76,7 @@ function cacheKeyFor(genre) {
   return `chart_pool:${String(genre).toLowerCase()}`;
 }
 
-export async function getRandomByGenre(genre = "kpop", count = 50) {
+export async function getRandomByGenre(genre, count = 50) {
   const key = cacheKeyFor(genre);
   const entry = getCache(key);
   let pool = entry?.items;
@@ -92,7 +92,7 @@ export async function getRandomByGenre(genre = "kpop", count = 50) {
   return pool.slice(0, count);
 }
 
-export async function refreshGenre(genre = "kpop") {
+export async function refreshGenre(genre) {
   const key = cacheKeyFor(genre);
   const fresh = await buildPoolForGenre(genre);
   setCache(key, fresh, true);

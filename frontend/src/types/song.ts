@@ -5,4 +5,5 @@ export interface Song {
     previewUrl: string;
     imageUrl: string;
     externalUrl: string;
+    genre: string;
 }

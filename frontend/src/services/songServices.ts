@@ -60,6 +60,7 @@ export default class SongService {
       previewUrl: track.preview_url ?? "",
       imageUrl: track.image ?? "",
       externalUrl: track.external_url ?? "",
+      genre: genre,
     }));
 
     this.cachedSongs = next;
@@ -78,6 +79,20 @@ export default class SongService {
     await axios.post(`${this.baseUrl}/refresh`, null, { params: { genre } });
     return this.fetchRandom(genre);
   }
+
+  // async refreshGenre(genre: Genre): Promise<void> {
+  //   try {
+  //     const res = await axios.get(`${this.baseUrl}/refresh-genre`, {
+  //       params: { genre },
+  //     });
+  //     console.log(
+  //       `Refreshed genre: ${genre}, refreshed count: ${res.data.count}`
+  //     );
+  //   } catch (err) {
+  //     console.error("Failed to refresh genre:", err);
+  //   }
+  // }
+
   getCachedSongs() {
     return this.cachedSongs;
   }
@@ -97,9 +112,9 @@ export default class SongService {
   async playSong(index: number = this.currentIndex, genre: Genre) {
     await this.ensureGenre(genre);
 
-    if (!this.cachedSongs.length) {
-      await this.fetchRandom(genre);
-    }
+    // if (!this.cachedSongs.length) {
+    //   await this.fetchRandom(genre);
+    // }
     if (!this.cachedSongs.length) {
       console.error("No songs available to play after fetching.");
       return;
@@ -132,10 +147,10 @@ export default class SongService {
 
   async playNextSong(genre: Genre) {
     await this.ensureGenre(genre);
-    if (!this.cachedSongs.length) {
-      console.error("No cached songs available. Fetching new songs...");
-      await this.fetchRandom(genre);
-    }
+    // if (!this.cachedSongs.length) {
+    //   console.error("No cached songs available. Fetching new songs...");
+    //   await this.fetchRandom(genre);
+    // }
 
     if (!this.cachedSongs.length) {
       console.error("No songs available to play after fetching.");
@@ -217,10 +232,7 @@ export default class SongService {
     });
   }
 
-  async getRandomSongsForGenre(
-    count: number,
-    genre: Genre,
-  ): Promise<Song[]> {
+  async getRandomSongsForGenre(count: number, genre: Genre): Promise<Song[]> {
     await this.ensureGenre(genre);
     let pool = this.getCachedSongs();
 
@@ -242,7 +254,9 @@ export default class SongService {
     //   // .filter((s) => s.previewUrl && s.previewUrl.trim() !== "")
     //   .slice(0, 3);
 
-    const validSongs = songs.filter((s) => s.previewUrl && s.previewUrl.trim() !== "").slice(0, 3);
+    const validSongs = songs
+      .filter((s) => s.previewUrl && s.previewUrl.trim() !== "")
+      .slice(0, 3);
 
     if (validSongs.length === 0) return;
 
