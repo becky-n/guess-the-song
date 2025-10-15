@@ -13,17 +13,24 @@ import { secureRandomInt, secureArrayShuffle } from "./secureRandom";
  * @returns Array of shuffled options including the correct answer
  */
 export const generateMultipleChoiceOptions = (
-  correctSong: Song, 
-  allSongs: Song[], 
+  correctSong: Song,
+  allSongs: Song[],
   numberOfOptions: number = 4
 ): string[] => {
-  const wrongOptions = allSongs
-    .filter(s => s.title !== correctSong.title)
-    .slice(0, numberOfOptions - 1)
-    .map(s => s.title);
-  
-  const allOptions = [correctSong.title, ...wrongOptions];
-  return secureArrayShuffle(allOptions);
+  // Build a pool of unique titles excluding the correct one
+  const pool = Array.from(
+    new Set(
+      allSongs
+        .filter(s => s.title !== correctSong.title)
+        .map(s => s.title)
+    )
+  );
+
+  const need = Math.max(0, numberOfOptions - 1);
+  const wrongOptions = secureArrayShuffle(pool).slice(0, Math.min(need, pool.length));
+
+  // Shuffle again so the correct answer isn't always at index 0
+  return secureArrayShuffle([correctSong.title, ...wrongOptions]);
 };
 
 /**
