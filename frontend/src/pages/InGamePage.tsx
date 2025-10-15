@@ -560,10 +560,10 @@ const InGamePage: React.FC = () => {
       if (currentRound === 1) {
         // For first round, get and set current song, then play it
         // const currentSongData = songService.getCurrentSong();
-        const { song: currentSongData } = selectRandomSong(cachedSongs);
+        const { song: currentSongData, index: randomIndex } = selectRandomSong(cachedSongs);
         if (currentSongData) {
           setCurrentSong(currentSongData);
-          songService.playSong();
+          songService.playSong(randomIndex);
         }
       } else {
         // For subsequent rounds, move to next song and play it
@@ -624,53 +624,64 @@ const InGamePage: React.FC = () => {
   // Helper function for single song/artist/reverse modes
   const setupSingleSongMode = () => {
     // Safety check: ensure songs are loaded for the correct genre
-    if (!checkSongsLoaded("setupSingleSongMode")) {
-      return null;
-    }
+      if (!checkSongsLoaded("setupSingleSongMode")) {
+    return null;
+  }
 
-    // let currentSongData = null;
-    // if (currentRound !== 1) {
-    //   currentSongData = songService.getNextSong();
-    // }
+  // For round 1, select randomly like Quick Guess
+  if (currentRound === 1) {
+    const allSongs = songService.getCachedSongs();
+    const { song: selectedSong, index: randomIndex } = selectRandomSong(allSongs);
 
-      const currentSongData = currentRound === 1 ?
-      songService.getCurrentSong() :
-      songService.getNextSong();
-
-    if (currentSongData) {
-      let answer = currentSongData.title; // Default for single song and reverse song
+    if (selectedSong) {
+      let answer = selectedSong.title;
       if (isGuessArtist) {
-        answer = currentSongData.artist;
+        answer = selectedSong.artist;
       }
 
-      // Get the current index for consistent playback across players
-      const currentIndex =
-        currentRound === 1
-          ? songService.getCurrentIndex()
-          : (songService.getCurrentIndex() + 1) %
-            songService.getCachedSongs().length;
-
-      const roundData = {
-        song: currentSongData,
-        choices: [],
-        answer: answer,
-        songIndex: currentIndex,
-      };
-
-      // Choose the appropriate playback method
+      // Ensure host plays exactly this selection (by details to avoid index drift)
       if (isReverseSong) {
-        if (currentRound === 1) songService.playReverseSong();
-        else songService.playNextReverseSong();
-      } else if (currentRound === 1) {
-        songService.playSong();
+        songService.playReverseSongByDetails(selectedSong);
       } else {
-        songService.playNextSong();
+        songService.playSongByDetails(selectedSong);
       }
 
-      return roundData;
+      return {
+        song: selectedSong,
+        choices: [],
+        answer,
+        songIndex: randomIndex, // send exact index to clients
+      };
     }
     return null;
-  };
+  }
+
+  // Subsequent rounds: keep previous next-song behavior
+  const currentSongData = songService.getNextSong();
+  if (currentSongData) {
+    let answer = currentSongData.title; // default for single/reverse
+    if (isGuessArtist) {
+      answer = currentSongData.artist;
+    }
+
+    const currentIndex = songService.getCurrentIndex();
+
+    if (isReverseSong) {
+      songService.playNextReverseSong();
+    } else {
+      songService.playNextSong();
+    }
+
+    return {
+      song: currentSongData,
+      choices: [],
+      answer,
+      songIndex: currentIndex,
+    };
+  }
+
+  return null;
+};
 
   // Helper function for quick guess mode
   const setupQuickGuessMode = () => {
