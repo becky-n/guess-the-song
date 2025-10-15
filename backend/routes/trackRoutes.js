@@ -13,16 +13,18 @@ function toCount(q) {
   return Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 50;
 }
 
-
+// GET /tracks?genre&count=50
 router.get('/', async (req, res) => {
   try {
+    // Parse and validate query parameters
     const genre = toGenre(req.query.genre);
     const count = toCount(req.query.count);
-
+  
     if (!GENRES.includes(genre)) {
       return res.status(400).json({ error: "Unsupported genre", allowed: GENRES });
     }
 
+    // Fetch random tracks
     const tracks = await getRandomByGenre(genre, count);
     res.json({ genre, tracks });
   } catch (e) {
@@ -31,6 +33,7 @@ router.get('/', async (req, res) => {
   }
 });
 
+// POST /tracks/refresh?genre
 router.post('/refresh', async (req, res) => {
   try {
     const genre = toGenre(req.query.genre);
@@ -39,8 +42,10 @@ router.post('/refresh', async (req, res) => {
       return res.status(400).json({ error: "Unsupported genre", allowed: GENRES });
     }
 
+    // Refresh tracks for the genre
     const refreshed = await refreshGenre(genre);
     res.json({ genre, refreshed });
+
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to refresh" });

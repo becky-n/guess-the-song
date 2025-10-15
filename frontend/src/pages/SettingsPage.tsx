@@ -6,7 +6,7 @@ import { generateRoomCode } from "../utils/roomCode.tsx";
 import { type GameSettings, PlayerCount, RoundsCount } from "../components/Settings";
 import { socket } from '../socket';
 
-const GENRES = ["kpop", "pop", "hiphop", "edm"] as const;
+const GENRES = ["kpop", "pop", "hiphop", "karaoke hits", "top hits", "r&b"] as const;
 type Genre = typeof GENRES[number];
 
 const SettingsPage = () => {

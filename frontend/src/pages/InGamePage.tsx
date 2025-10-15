@@ -35,7 +35,7 @@ const getTimeAsNumber = (time?: string | number | null): number => {
   return m ? parseInt(m[0], 10) : 30;
 };
 
-type Genre = "kpop" | "pop" | "hiphop" | "edm";
+type Genre = "kpop" | "pop" | "hiphop" | "karaoke hits" | "top hits" | "r&b";
 
 interface GuessifyProps {}
 
@@ -510,7 +510,9 @@ const InGamePage: React.FC = () => {
     | "kpop"
     | "pop"
     | "hiphop"
-    | "edm";
+    | "karaoke hits"
+    | "top hits"
+    | "r&b";
 
   useEffect(() => {
     // Always fetch fresh songs for the selected genre to ensure correct genre is loaded

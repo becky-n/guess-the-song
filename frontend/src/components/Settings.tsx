@@ -7,7 +7,7 @@ import RoundIcon from "../assets/setting-icons/Round.png";
 import TimerIcon from "../assets/setting-icons/Timer.png";
 
 
-const GENRES = ["kpop", "pop", "hiphop", "edm"] as const;
+const GENRES = ["kpop", "pop", "hiphop", "karaoke hits", "top hits", "r&b"] as const;
 export type Genre = (typeof GENRES)[number];
 
   

@@ -2,21 +2,24 @@ import { deezerGet } from "./client.js";
 import { getCache, setCache, isExpired } from "../utils/cache.js";
 import { shuffleInPlace } from "../utils/shuffle.js";
 
-export const GENRES = Object.freeze(["kpop", "pop", "hiphop", "edm"]);
+export const GENRES = Object.freeze(["kpop", "pop", "hiphop", "karaoke hits", "top hits", "r&b"]);
 
 // Map each genre to a Deezer playlist ID
 const PLAYLIST_BY_GENRE = {
-  kpop: 4096400722, 
-  pop:  2098157264,  
+  kpop: 12244134951, 
+  pop:  13650203641,  
   hiphop: 1677006641,   
-  edm:  7280809544,  
+  "karaoke hits":  7280809544,  
+  "top hits": 3155776842,
+  "r&b": 1999466402,
 };
 
+// Check if a genre is valid
 function isValidGenre(genre) {
   return GENRES.includes(String(genre).toLowerCase());
 }
 
-
+//Normalizes a Deezer track object to a standard format.
 function normalizeTrack(t) {
   return {
     id: t.id,
@@ -30,6 +33,7 @@ function normalizeTrack(t) {
   };
 }
 
+// Fetch tracks from a Deezer playlist with pagination support
 async function fetchPlaylist(playlistId, index = 0, limit = 50) {
   const data = await deezerGet(`/playlist/${playlistId}/tracks`, {
     params: { index, limit },
@@ -38,6 +42,7 @@ async function fetchPlaylist(playlistId, index = 0, limit = 50) {
   return items.map(normalizeTrack);
 }
 
+// Remove duplicate tracks based on ID and name/artist combination
 function dedupe(tracks) {
   const seenId = new Set();
   const seenKey = new Set();
@@ -62,6 +67,7 @@ async function buildPoolForGenre(genre) {
 
   const playlistId = PLAYLIST_BY_GENRE[key];
   let pool = [];
+  // Fetch first 150 tracks (3 pages of 50)
   for (const idx of [0, 50, 100]) {
     const chunk = await fetchPlaylist(playlistId, idx, 50);
     pool.push(...chunk);
@@ -76,11 +82,13 @@ function cacheKeyFor(genre) {
   return `chart_pool:${String(genre).toLowerCase()}`;
 }
 
+// Get random tracks by genre, using cache if available
 export async function getRandomByGenre(genre = "kpop", count = 50) {
   const key = cacheKeyFor(genre);
   const entry = getCache(key);
   let pool = entry?.items;
 
+  // If no cache or expired, rebuild the pool
   if (!pool || isExpired(entry)) {
     pool = await buildPoolForGenre(genre);
     setCache(key, pool);
@@ -88,6 +96,7 @@ export async function getRandomByGenre(genre = "kpop", count = 50) {
   return pool.slice(0, count);
 }
 
+// Force refresh the pool for a genre and update cache
 export async function refreshGenre(genre = "kpop") {
   const key = cacheKeyFor(genre);
   const fresh = await buildPoolForGenre(genre);

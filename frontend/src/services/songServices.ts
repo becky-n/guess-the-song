@@ -10,7 +10,8 @@ if (!API_BASE) {
 }
 console.log("Using API base URL:", API_BASE);
 
-export type Genre = "kpop" | "pop" | "hiphop" | "edm";
+export type Genre = "kpop" | "pop" | "hiphop" | "karaoke hits" | "top hits" | "r&b";
+
 type SongDTO = {
   id: string | number;
   name: string;
@@ -38,7 +39,17 @@ export default class SongService {
     this.cachedSongs = [];
   }
 
-  // --- API calls ---
+  /**
+   * Fetches a random list of songs from the backend for a specified genre and count.
+   * 
+   * This method clears the existing song cache to ensure that only fresh songs of the requested genre are returned.
+   * It then sends a GET request to the backend API, retrieves the song data, and maps it into the frontend's `Song` format.
+   * The fetched songs are cached and returned.
+   *
+   * @param genre - The genre of songs to fetch. Defaults to `"kpop"`.
+   * @param count - The number of songs to fetch. Defaults to `50`.
+   * @returns A promise that resolves to an array of `Song` objects.
+   */
   async fetchRandom(genre: Genre = "kpop", count = 50): Promise<Song[]> {
     console.log(`Fetching ${count} songs for genre: ${genre}`);
    
@@ -48,6 +59,7 @@ export default class SongService {
     const res = await axios.get(this.baseUrl, { params: { genre, count } });
     const data = res.data;
 
+    // Map the fetched song data (SongDTO) from the backend into the Song format used by the frontend
     this.cachedSongs = ((data.tracks ?? []) as SongDTO[]).map((track) => ({
       id: String(track.id),
       title: track.name,
@@ -61,10 +73,12 @@ export default class SongService {
     return this.cachedSongs;
   }
 
+  // --- Song Getters and Setters ---
   async refresh(genre: Genre = "kpop") {
     await axios.post(`${this.baseUrl}/refresh`, null, { params: { genre } });
     return this.fetchRandom(genre);
   }
+
   getCachedSongs() {
     return this.cachedSongs;
   }
@@ -109,12 +123,15 @@ export default class SongService {
       this.currentIndex = this.cachedSongs.length - 1;
     }
 
-
     this.currentAudio = new Audio(song.previewUrl);
     this.currentAudio.volume = this.currentVolume;
     this.currentAudio.muted = false;
     this.isMuted = false;
+
+    
     if (this.onMuteStateChange) this.onMuteStateChange(false);
+
+
     this.currentAudio.play().then(() => {
       if (this.onTrackChange) this.onTrackChange(song, this.currentIndex);
     }).catch(err => console.error('Playback failed (by details):', err));
@@ -195,6 +212,7 @@ export default class SongService {
     if (this.onMuteStateChange) {
       this.onMuteStateChange(false);
     }
+
     this.currentAudio
       .play()
       .then(() => {
@@ -228,6 +246,18 @@ export default class SongService {
     }
   }
 
+  /**
+   * Plays the given song in reverse using the Web Audio API.
+   *
+   * This method fetches the song's preview URL, decodes the audio data,
+   * reverses the audio buffer, and plays it through the browser's audio context.
+   * It manages volume and mute state, stores references for stopping and volume control,
+   * and triggers callbacks for mute state and track changes.
+   * If playback fails, it falls back to a simpler reverse playback approach.
+   *
+   * @param song - The song object containing the preview URL to play in reverse.
+   * @throws Will log an error and fallback to a simple reverse playback if the Web Audio API fails.
+   */
   private async playReverseSongWithWebAudio(song: Song) {
     try {
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
